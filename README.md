@@ -1,8 +1,8 @@
-### Environment for Safe Navigation of Ground Robots in Obstacle-Rich Environments
+## Environment for Safe Navigation of Ground Robots in Obstacle-Rich Environments
 
 This environment is designed to facilitate the safe navigation of a ground robot within obstacle-rich environments. The primary objective is to develop a composite high-order control barrier function based on the generated map and other constraints such as velocity limitations. This barrier function, accessible through `env.barrier`, is instrumental in ensuring the safety of the robot during navigation. The library allows for the consideration of various robot dynamics, map layouts, and constraints, providing flexibility in experimentation and training scenarios.
 
-#### Classes:
+### Classes:
 
 1. **Engine:**
    - This class represents the core environment engine responsible for simulating the robot's navigation and interaction with the environment.
@@ -19,7 +19,7 @@ This environment is designed to facilitate the safe navigation of a ground robot
    - It encapsulates the robot's dynamics, including state initialization, observation space, and action space.
    - The class allows for the integration of different robot models with customizable configurations.
 
-#### Dependencies:
+### Dependencies:
 - **numpy**: For numerical computations and array operations.
 - **torch**: Used for tensor operations and integration.
 - **gymnasium**: Provides the environment interface and utilities.
