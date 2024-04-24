@@ -1,4 +1,7 @@
 ## Environment for Safe Navigation of Ground Robots in Obstacle-Rich Environments
+<p align="center">
+    <img src="obstacle_rich_env/examples/map_layout.png" alt="Map Layout" width="50%">
+</p>
 
 This environment is designed to facilitate the safe navigation of a ground robot within obstacle-rich environments. The primary objective is to develop a composite high-order control barrier function based on the generated map and other constraints such as velocity limitations. This barrier function, accessible through `env.barrier`, is instrumental in ensuring the safety of the robot during navigation. The library allows for the consideration of various robot dynamics, map layouts, and constraints, providing flexibility in experimentation and training scenarios.
 
