@@ -23,11 +23,12 @@ This environment is designed to facilitate the safe navigation of a ground robot
    - The class allows for the integration of different robot models with customizable configurations.
 
 ### Dependencies:
-- **numpy**: For numerical computations and array operations.
-- **torch**: Used for tensor operations and integration.
-- **gymnasium**: Provides the environment interface and utilities.
-- **matplotlib**: Enables visualization of the environment and map.
-- **pygame**: Used for rendering interactive graphics within the environment.
-- **attrdict**: Facilitates the handling of attribute dictionaries.
+- **numpy**
+- **torch**
+- **gymnasium**
+- **[hocbf-cmposition](https://github.com/pedramrabiee/hocbf_composition)**
+- **matplotlib**
+- **pygame**
+- **attrdict**
 
 The environment offers flexibility for experimentation, allowing users to customize robot dynamics, map layouts, and constraints according to their specific scenarios. Additionally, the provided barrier function enhances safety during navigation, contributing to effective training and evaluation of robotic systems in complex environments.
