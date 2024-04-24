@@ -23,12 +23,12 @@ This environment is designed to facilitate the safe navigation of a ground robot
    - The class allows for the integration of different robot models with customizable configurations.
 
 ### Dependencies:
-- **numpy**
-- **torch**
-- **gymnasium**
-- **[hocbf-composition](https://github.com/pedramrabiee/hocbf_composition)**
-- **matplotlib**
-- **pygame**
-- **attrdict**
+- numpy
+- torch
+- gymnasium
+- [hocbf-composition](https://github.com/pedramrabiee/hocbf_composition)
+- matplotlib
+- pygame
+- attrdict
 
 The environment offers flexibility for experimentation, allowing users to customize robot dynamics, map layouts, and constraints according to their specific scenarios. Additionally, the provided barrier function enhances safety during navigation, contributing to effective training and evaluation of robotic systems in complex environments.
