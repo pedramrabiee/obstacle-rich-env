@@ -26,7 +26,7 @@ This environment is designed to facilitate the safe navigation of a ground robot
 - **numpy**
 - **torch**
 - **gymnasium**
-- **[hocbf-cmposition](https://github.com/pedramrabiee/hocbf_composition)**
+- **[hocbf-composition](https://github.com/pedramrabiee/hocbf_composition)**
 - **matplotlib**
 - **pygame**
 - **attrdict**
