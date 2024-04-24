@@ -1,0 +1,1 @@
+import obstacle_rich_env.envs.register

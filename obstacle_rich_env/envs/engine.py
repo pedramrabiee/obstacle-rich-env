@@ -1,0 +1,275 @@
+from __future__ import annotations
+from typing import Any
+import gymnasium
+import gymnasium.spaces
+from gymnasium.core import RenderFrame
+
+from obstacle_rich_env.envs.map import Map
+from obstacle_rich_env.envs.robot import Robot
+import numpy as np
+import torch
+from attrdict import AttrDict as AD
+from torchdiffeq import odeint
+from functools import partial
+from collections import OrderedDict
+import matplotlib.pyplot as plt
+import matplotlib
+import pygame
+import os
+
+matplotlib.use('Agg')  # Use the 'Agg' backend for non-interactive plotting
+
+
+class ResamplingError(AssertionError):
+    ''' Raised when we fail to sample a valid distribution of objects or goals '''
+    pass
+
+
+class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
+    def __init__(self, config: {}, render_mode=None):
+        gymnasium.utils.EzPickle.__init__(self, config=config)
+
+        self.config = AD(config)
+        self.observation_flatten = self.config['observation_flatten']
+        self.timestep = self.config['timestep']
+        self.floor_size = np.array(self.config['floor_size'])
+        self.render_mode = render_mode
+
+        # Set random seed and make random_generator
+        self.set_seed(self.config['seed'] if 'seed' in self.config else None)
+
+        # Instantiate robot
+        self.robot = Robot(robot_name=config['robot']['name'], random_generator=self.random_generator)
+
+        # Make spaces
+        self.build_observation_space()
+        self.action_space = self.robot.build_action_space()
+
+        self.map, self.robot_state, self.goal_state = None, None, None
+
+        self.screen = None
+
+    def set_seed(self, seed: int | None = None) -> None:
+        """Set internal random next_state seeds."""
+        self._seed = 1523876 if seed is None else seed
+        self.random_generator = np.random.RandomState(self._seed)
+
+    def build_observation_space(self):
+        obs_space_dict = OrderedDict()
+        obs_space_dict.update(self.robot.build_observation_space())
+
+        obs_space_dict = gymnasium.spaces.Dict(obs_space_dict)
+        if self.observation_flatten:
+            self.observation_space = gymnasium.spaces.utils.flatten_space(
+                obs_space_dict,
+            )
+        else:
+            self.observation_space = obs_space_dict
+
+    def reset(self, *,
+              seed: int | None = None,
+              options: dict[str, Any] | None = None,
+              ):
+        self.set_seed(seed)
+        if self.map is None or self.config.reset_map_layout:
+            self.map = Map(robot=self.robot, layout=self.config['map_layout'], cfg=self.config,
+                           random_generator=self.random_generator)
+
+        # Spawn robot and sample states
+        self.spawn_robot()
+
+        # Spawn goal
+        self.spawn_goal()
+
+        self._step = 0
+
+        if self.render_mode == "human":
+            self.render()
+
+        return self.obs()
+
+    def step(self, action):
+        action = action if torch.is_tensor(action) else torch.from_numpy(action)
+        next_state = odeint(func=lambda t, y: partial(self.robot.dynamics.rhs,
+                                                      action=action)(y),
+                            y0=self.robot_state,
+                            t=torch.tensor([0.0, self.timestep]), method=self.config.integrator)[-1].squeeze().detach()
+
+        self.robot_state = next_state
+
+        reward = self.reward()
+
+        self._step += 1
+
+        # Call render
+        self.render()
+        # TODO: Implement cost function and add cost to info
+        return self.obs(), reward, self.terminated(), self.truncated(), {}
+
+    def reward(self):
+
+        return 0.0
+
+    def obs(self):
+        return self.robot_state_np
+
+    def terminated(self):
+        return self.dist_to_robot(self.goal_state_np) <= self.config.goal_size
+
+    def truncated(self):
+        return self._step > self.config.max_episode_steps or (self.barrier.get_min_barrier_at(
+            self.robot_state) < self.config.barrier_truncation_thresh).squeeze().item()
+
+    def spawn_robot(self):
+        """Sample a new safe robot state"""
+        for _ in range(10000):  # Retries
+            xy_batch = self.random_generator.uniform(-self.floor_size, self.floor_size,
+                                                     (self.config.reset_batch_size, 2))
+            robot_state = torch.tensor(self.robot.initialize_states_from_pos(pos=xy_batch), dtype=torch.float64)
+            passed_indices = (self.barrier.get_min_barrier_at(robot_state).squeeze(
+                dim=1) > self.config.robot_init_thresh).nonzero().squeeze()
+            if passed_indices.numel() > 0:
+                index = passed_indices[0]
+                self.robot_state = robot_state[index]
+                break
+        else:
+            raise ResamplingError('Failed to place robot')
+
+    def spawn_goal(self):
+        """Sample a goal position"""
+        for _ in range(10000):  # Retries
+            xy_batch = self.random_generator.uniform(-self.floor_size, self.floor_size,
+                                                     (self.config.reset_batch_size, 2))
+            suitable_indices = self.dist_to_robot(xy_batch) > self.config.min_robot_to_goal_dist
+            xy_batch = xy_batch[suitable_indices]
+            if xy_batch.size > 0:
+                goal_state = np.zeros((xy_batch.shape[0], self.robot.state_dim))
+                goal_state[:, :2] = xy_batch
+                goal_state = torch.tensor(goal_state, dtype=torch.float64)
+                passed_indices = (self.barrier.get_min_barrier_at(goal_state).squeeze(
+                    dim=1) > self.config.goal_init_thresh).nonzero().squeeze()
+                if passed_indices.numel() > 0:
+                    index = passed_indices[0]
+                    self.goal_state = goal_state[index][:2]
+                    break
+        else:
+            raise ResamplingError('Failed to place robot')
+
+    def dist_to_robot(self, xy: np.ndarray):
+        if xy.ndim == 2:
+            return np.linalg.norm(self.robot_state_np[:2] - xy, axis=1)
+        return np.linalg.norm(self.robot_state_np[:2] - xy)
+
+    def close(self):  # Part of Gym interface
+        if self.screen is not None:
+            os.remove(self.map_image)
+            pygame.display.quit()
+            pygame.quit()
+
+    @property
+    def robot_state_np(self):
+        return self.robot_state.cpu().detach().numpy()
+
+    @property
+    def goal_state_np(self):
+        return self.goal_state.cpu().detach().numpy()
+
+    @property
+    def barrier(self):
+        return self.map.barrier
+
+    def render(self):
+        if self.render_mode != "human":
+            return
+
+        if self.screen is None:
+            # Initialize Pygame
+            pygame.init()
+
+            # Set up the display
+            self.width, self.height = 800, 800
+            self.screen = pygame.display.set_mode((self.width, self.height))
+            pygame.display.set_caption("Robot Navigation")
+
+            # Generate map image using Matplotlib
+            self.map_image = self._generate_map_image()
+
+            # Load the map image into Pygame
+            self.map_surface = pygame.image.load(self.map_image)
+            self.map_surface = pygame.transform.scale(self.map_surface, (self.width, self.height))
+
+            # Initialize robot and goal sprites
+            self.robot_sprite = pygame.Surface((40, 40), pygame.SRCALPHA)
+            pygame.draw.circle(self.robot_sprite, (135, 206, 250, 128), (20, 20), 20)  # Robot circle
+            pygame.draw.circle(self.robot_sprite, (255, 255, 255), (20, 20), 5)  # Robot center dot
+            # pygame.draw.circle(self.robot_sprite, (92, 119, 144, 128), (20, 20), 20)  # Robot circle
+            # pygame.draw.circle(self.robot_sprite, (255, 255, 255), (20, 20), 5)  # Robot center dot
+            # pygame.draw.circle(self.robot_sprite, (0, 0, 255), (10, 10), 10)
+
+            self.goal_sprite = pygame.Surface((40, 40), pygame.SRCALPHA)
+            pygame.draw.circle(self.goal_sprite, (144, 238, 144, 128), (20, 20), 20)  # Goal circle
+            pygame.draw.circle(self.goal_sprite, (255, 255, 255), (20, 20), 5)  # Goal center dot
+            # pygame.draw.circle(self.goal_sprite, (180, 215, 226, 128), (20, 20), 20)  # Goal circle
+            # pygame.draw.circle(self.goal_sprite, (255, 255, 255), (20, 20), 5)  # Goal center dot
+            # pygame.draw.circle(self.goal_sprite, (0, 255, 0), (10, 10), 10)
+
+            # Set robot and goal positions
+            self.robot_pos = self._coords_to_pixel(self.robot_state_np[:2])
+            self.goal_pos = self._coords_to_pixel(self.goal_state_np)
+
+        else:
+            # Clear the screen
+            self.screen.fill((255, 255, 255))
+
+            # Draw the map image
+            self.screen.blit(self.map_surface, (0, 0))
+
+            # Update robot position
+            self.robot_pos = self._coords_to_pixel(self.robot_state_np[:2])
+
+            # Draw the robot
+            robot_rect = self.robot_sprite.get_rect(center=self.robot_pos)
+            self.screen.blit(self.robot_sprite, robot_rect)
+
+            # Draw the goal
+            goal_rect = self.goal_sprite.get_rect(center=self.goal_pos)
+            self.screen.blit(self.goal_sprite, goal_rect)
+
+            # Update the display
+            pygame.display.flip()
+
+    def _generate_map_image(self):
+        X, Y, Z = self._generate_map_contours()
+
+        fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
+        cmap = matplotlib.colors.ListedColormap(['#FFF5F5', '#FFD8D8'])  # Soft color palette
+        ax.contourf(X, Y, Z, levels=[-10, 0], colors=cmap.colors)
+        ax.contour(X, Y, Z, levels=[0], colors='#FF6961', linewidth=2)
+        ax.set_aspect('equal', adjustable='box')
+        ax.set_xlim(-self.floor_size[0], self.floor_size[0])
+        ax.set_ylim(-self.floor_size[1], self.floor_size[1])
+
+        ax.axis('off')
+
+        image_path = 'map_image.png'
+        plt.savefig(image_path, bbox_inches='tight', pad_inches=0, dpi=600)
+        plt.close(fig)
+
+        return image_path
+
+    def _generate_map_contours(self):
+        x = np.linspace(-self.floor_size[0], self.floor_size[0], 500)
+        y = np.linspace(-self.floor_size[1], self.floor_size[1], 500)
+        X, Y = np.meshgrid(x, y, )
+        points = np.column_stack((X.flatten(), Y.flatten()))
+        points = np.column_stack((points, np.zeros(points.shape)))
+        points = torch.tensor(points, dtype=torch.float32)
+        Z = self.map.barrier.min_barrier(points)
+        Z = Z.reshape(X.shape)
+        return X, Y, Z
+
+    def _coords_to_pixel(self, coords):
+        x, y = coords
+        pixel_x = int((x + self.floor_size[0]) * (self.width / (2 * self.floor_size[0])))
+        pixel_y = int((-y + self.floor_size[1]) * (self.height / (2 * self.floor_size[1])))
+        return pixel_x, pixel_y
