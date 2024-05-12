@@ -1,4 +1,4 @@
-## Environment for Safe Navigation of Ground Robots in Obstacle-Rich Environments
+## Gym-Style Environment for Safe Navigation of Ground Robots in Obstacle-Rich Environments
 <p align="center">
     <img src="obstacle_rich_env/examples/map_layout.png" alt="Map Layout" width="70%">
 </p>
