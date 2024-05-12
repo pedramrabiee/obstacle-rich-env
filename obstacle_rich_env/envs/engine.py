@@ -3,6 +3,7 @@ from typing import Any
 import gymnasium
 import gymnasium.spaces
 from gymnasium.core import RenderFrame
+from gymnasium.spaces import Box
 
 from obstacle_rich_env.envs.map import Map
 from obstacle_rich_env.envs.robot import Robot
@@ -16,6 +17,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 import pygame
 import os
+from collections import deque
 
 matplotlib.use('Agg')  # Use the 'Agg' backend for non-interactive plotting
 
@@ -41,11 +43,21 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         # Instantiate robot
         self.robot = Robot(robot_name=config['robot']['name'], random_generator=self.random_generator)
 
+        # Initialize map to get the barrier dimension for the observation space
+        self.map = Map(robot=self.robot, layout=self.config['map_layout'], cfg=self.config,
+                       random_generator=self.random_generator)
+
         # Make spaces
         self.build_observation_space()
         self.action_space = self.robot.build_action_space()
 
-        self.map, self.robot_state, self.goal_state = None, None, None
+        # self.obs_functional = self.make_obs_functional()
+
+        # Set map back to None
+        self.robot_state, self.goal_state = None, None
+        # vel_queue
+        self._vel_queue = None
+
 
         self.screen = None
 
@@ -56,37 +68,57 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
     def build_observation_space(self):
         obs_space_dict = OrderedDict()
-        obs_space_dict.update(self.robot.build_observation_space())
+        # build observation space
+        if 'state' in self.config.obs_key_to_return:
+            obs_space_dict.update(self.robot.build_observation_space())
 
-        obs_space_dict = gymnasium.spaces.Dict(obs_space_dict)
+        if 'custom_state' in self.config.obs_key_to_return:
+            custom_observation_space = self.robot.build_custom_observation_space()
+            assert len(custom_observation_space) > 0, 'custom state is not implemented'
+            obs_space_dict.update(custom_observation_space)
+
+        # build goal space
+        if 'goal_pos' in self.config.obs_key_to_return:
+            obs_space_dict.update(self._build_goal_observation_space())
+
+        # build barrier space
+        if 'barriers' in self.config.obs_key_to_return:
+            obs_space_dict.update(self._build_barrier_observation_space())
+
+        self.obs_space_dict = gymnasium.spaces.Dict(obs_space_dict)
+        self.observation_space = self.obs_space_dict
+
         if self.observation_flatten:
-            self.observation_space = gymnasium.spaces.utils.flatten_space(
-                obs_space_dict,
-            )
-        else:
-            self.observation_space = obs_space_dict
+            self.observation_space = gymnasium.spaces.utils.flatten_space(self.obs_space_dict)
+            self.obs_flat_size = self.observation_space.shape[0]
 
     def reset(self, *,
               seed: int | None = None,
               options: dict[str, Any] | None = None,
               ):
         self.set_seed(seed)
+
         if self.map is None or self.config.reset_map_layout:
             self.map = Map(robot=self.robot, layout=self.config['map_layout'], cfg=self.config,
                            random_generator=self.random_generator)
 
-        # Spawn robot and sample states
+        # Spawn robot and sample state
         self.spawn_robot()
 
         # Spawn goal
         self.spawn_goal()
+        self.last_dist_to_goal = self.dist_to_goal()
 
         self._step = 0
 
+        # TODO: add velocity to memory
+        self._vel_queue = None
+        self.push_vel()
+
         if self.render_mode == "human":
             self.render()
-
-        return self.obs()
+        obs = self.obs()
+        return obs, dict(safety_violated=self._safety_violated(obs))
 
     def step(self, action):
         action = action if torch.is_tensor(action) else torch.from_numpy(action)
@@ -97,21 +129,65 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
         self.robot_state = next_state
 
+        # Add velocity to memory
+        self.push_vel()
+
         reward = self.reward()
 
         self._step += 1
 
         # Call render
-        self.render()
+        if self.render_mode == "human":
+            self.render()
+
         # TODO: Implement cost function and add cost to info
-        return self.obs(), reward, self.terminated(), self.truncated(), {}
+        obs = self.obs()
+        return obs, reward, self.terminated(), self.truncated(), dict(safety_violated=self._safety_violated(obs))
+
+    def _safety_violated(self, obs):
+        if not self.observation_flatten and 'barriers' in obs:
+            return obs['barriers'].min() < 0.0
+        else:
+            return self.barrier.get_min_barrier_at(self.robot_state).squeeze().item() < 0.0
+
 
     def reward(self):
+        reward = 0.0
+        dist_to_goal = self.dist_to_goal()
+        # Distance to goal reward
+        reward += (self.last_dist_to_goal - dist_to_goal) * self.config.reward_dist_coef
+        self.last_dist_to_goal = dist_to_goal
+        # Goal achieved
+        if self.goal_met():
+            reward += self.config.reward_goal_coef
+        # Grid lock penalty
+        if self.gridlocked():
+            reward -= reward_gridlock_coef
+        # Safety violation penalty
+        min_barrier = self.barrier.get_min_barrier_at(self.robot_state).squeeze().item()
+        if min_barrier < 0:
+            reward += min_barrier * self.config.reward_safety_coef
 
-        return 0.0
+        return reward
 
     def obs(self):
-        return self.robot_state_np
+        obs = {}
+        if 'state' in self.config.obs_key_to_return:
+            obs.update({'state': self.robot_state_np})
+        if 'custom_state' in self.config.obs_key_to_return:
+            obs.update({'custom_state': self.robot.get_custom_state(self.robot_state).squeeze().cpu().detach().numpy()})
+        if 'goal_pos' in self.config.obs_key_to_return:
+            obs.update({'goal_pos': self.goal_state_np})
+        if 'barriers' in self.config.obs_key_to_return:
+            obs.update({'barriers': torch.hstack(
+                self.barrier.compute_barriers_at(self.robot_state)).squeeze().cpu().detach().numpy()})
+
+        if self.observation_flatten:
+            obs = gymnasium.spaces.utils.flatten(self.obs_space_dict, obs)
+
+        assert self.observation_space.contains(obs), f'Bad obs {obs} {self.observation_space}'
+
+        return obs
 
     def terminated(self):
         return self.dist_to_robot(self.goal_state_np) <= self.config.goal_size
@@ -160,6 +236,29 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             return np.linalg.norm(self.robot_state_np[:2] - xy, axis=1)
         return np.linalg.norm(self.robot_state_np[:2] - xy)
 
+    def dist_to_goal(self):
+        return self.dist_to_robot(self.goal_state_np)
+
+    def goal_met(self):
+        return self.dist_to_goal() < self.config.goal_size
+
+    def gridlocked(self):
+        if not self.goal_met() and len(self._vel_queue) == self.config.gridlock_check_duration:
+            vels = torch.stack(tuple(self._vel_queue))
+            rms = torch.norm(vels) / torch.sqrt(torch.tensor(vels.numel()))
+            if rms.item() < self.config.gridlock_threshold:
+                return True
+        return False
+
+    def push_vel(self):
+        if self._vel_queue is None:
+            self._vel_queue = deque()
+    #     TODO: Fix this
+        self._vel_queue.appendleft(self.robot_state[2])
+        while len(self._vel_queue) > self.config.gridlock_check_duration:
+            self._vel_queue.pop()
+
+
     def close(self):  # Part of Gym interface
         if self.screen is not None:
             os.remove(self.map_image)
@@ -168,7 +267,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
     @property
     def robot_state_np(self):
-        return self.robot_state.cpu().detach().numpy()
+        return self.robot_state.squeeze().cpu().detach().numpy()
 
     @property
     def goal_state_np(self):
@@ -179,9 +278,6 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         return self.map.barrier
 
     def render(self):
-        if self.render_mode != "human":
-            return
-
         if self.screen is None:
             # Initialize Pygame
             pygame.init()
@@ -189,7 +285,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             # Set up the display
             self.width, self.height = 800, 800
             self.screen = pygame.display.set_mode((self.width, self.height))
-            pygame.display.set_caption("Robot Navigation")
+            pygame.display.set_caption("Obstacle Rich Environment")
 
             # Generate map image using Matplotlib
             self.map_image = self._generate_map_image()
@@ -202,16 +298,10 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             self.robot_sprite = pygame.Surface((40, 40), pygame.SRCALPHA)
             pygame.draw.circle(self.robot_sprite, (135, 206, 250, 128), (20, 20), 20)  # Robot circle
             pygame.draw.circle(self.robot_sprite, (255, 255, 255), (20, 20), 5)  # Robot center dot
-            # pygame.draw.circle(self.robot_sprite, (92, 119, 144, 128), (20, 20), 20)  # Robot circle
-            # pygame.draw.circle(self.robot_sprite, (255, 255, 255), (20, 20), 5)  # Robot center dot
-            # pygame.draw.circle(self.robot_sprite, (0, 0, 255), (10, 10), 10)
 
             self.goal_sprite = pygame.Surface((40, 40), pygame.SRCALPHA)
             pygame.draw.circle(self.goal_sprite, (144, 238, 144, 128), (20, 20), 20)  # Goal circle
             pygame.draw.circle(self.goal_sprite, (255, 255, 255), (20, 20), 5)  # Goal center dot
-            # pygame.draw.circle(self.goal_sprite, (180, 215, 226, 128), (20, 20), 20)  # Goal circle
-            # pygame.draw.circle(self.goal_sprite, (255, 255, 255), (20, 20), 5)  # Goal center dot
-            # pygame.draw.circle(self.goal_sprite, (0, 255, 0), (10, 10), 10)
 
             # Set robot and goal positions
             self.robot_pos = self._coords_to_pixel(self.robot_state_np[:2])
@@ -235,8 +325,12 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             goal_rect = self.goal_sprite.get_rect(center=self.goal_pos)
             self.screen.blit(self.goal_sprite, goal_rect)
 
+        if self.render_mode == "human":
             # Update the display
             pygame.display.flip()
+        else:
+            # Get the pixel data from the current screen
+            return np.transpose(pygame.surfarray.array3d(self.screen), (1, 0, 2))
 
     def _generate_map_image(self):
         X, Y, Z = self._generate_map_contours()
@@ -244,7 +338,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         fig, ax = plt.subplots(figsize=(8, 8), dpi=300)
         cmap = matplotlib.colors.ListedColormap(['#FFF5F5', '#FFD8D8'])  # Soft color palette
         ax.contourf(X, Y, Z, levels=[-10, 0], colors=cmap.colors)
-        ax.contour(X, Y, Z, levels=[0], colors='#FF6961', linewidth=2)
+        ax.contour(X, Y, Z, levels=[0], colors='#FF6961')
         ax.set_aspect('equal', adjustable='box')
         ax.set_xlim(-self.floor_size[0], self.floor_size[0])
         ax.set_ylim(-self.floor_size[1], self.floor_size[1])
@@ -256,6 +350,12 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         plt.close(fig)
 
         return image_path
+
+    def _build_goal_observation_space(self):
+        return dict(goal_pos=Box(-np.inf, np.inf, (2,), dtype=np.float64))
+
+    def _build_barrier_observation_space(self):
+        return dict(barriers=Box(-np.inf, np.inf, (self.barrier.num_barriers,), dtype=np.float64))
 
     def _generate_map_contours(self):
         x = np.linspace(-self.floor_size[0], self.floor_size[0], 500)
@@ -273,3 +373,13 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         pixel_x = int((x + self.floor_size[0]) * (self.width / (2 * self.floor_size[0])))
         pixel_y = int((-y + self.floor_size[1]) * (self.height / (2 * self.floor_size[1])))
         return pixel_x, pixel_y
+
+    def make_obs_functional(self, obs_keys):
+        obs_funcs = {
+            'state': lambda x: x,
+            'custom_state': lambda x: self.robot.get_custom_state(x),
+            'goal_pos': lambda x: self.goal_state.to(x.device).repeat(x.shape[0], 1),
+            'barriers': lambda x: torch.hstack(self.barrier.compute_barriers_at(x)),
+        }
+        req_funcs = [obs_funcs[key] for key in obs_keys]
+        return lambda x: torch.cat([func(x) for func in req_funcs], dim=-1).detach()

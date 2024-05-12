@@ -9,7 +9,6 @@ class Robot:
         self.random_generator = random_generator
         self.dynamics = self.make_dynamics()
 
-
     def make_dynamics(self):
         module = importlib.import_module(f'obstacle_rich_env.robots.{self.robot_name}')
         class_name = f'{self.robot_name.capitalize()}Dynamics'
@@ -24,8 +23,14 @@ class Robot:
     def build_observation_space(self):
         return self.dynamics.build_observation_space()
 
+    def build_custom_observation_space(self):
+        return self.dynamics.build_custom_observation_space()
+
     def build_action_space(self):
         return self.dynamics.build_action_space()
+
+    def get_custom_state(self, state):
+        return self.dynamics.get_custom_state(state)
 
     @property
     def state_dim(self):
@@ -34,5 +39,3 @@ class Robot:
     @property
     def action_dim(self):
         return self.dynamics.action_dim
-
-

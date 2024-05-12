@@ -1,8 +1,9 @@
 import obstacle_rich_env
-import gymnasium as gym
+# import gymnasium as gym
 
-env = gym.make('Safe-UnicycleGoal0-v0', render_mode="human")
+env = obstacle_rich_env.make('Unicycle-Goal0', render_mode="human")
 obs = env.reset(seed=10)
+print(obs)
 for i in range(1000):
     action = env.action_space.sample()
     obs = env.step(action)

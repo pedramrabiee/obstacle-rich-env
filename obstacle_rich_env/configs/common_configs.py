@@ -1,9 +1,10 @@
 from attrdict import AttrDict as AD
 
 common_configs = AD(
-    timestep=0.01,
-    max_episode_steps=1000,
-    observation_flatten=True,
+    timestep=0.05,
+    max_episode_steps=10,
+    observation_flatten=False,
+    obs_key_to_return=["state", "custom_state", "goal_pos", "barriers"],        # provide a list of keys to include in the observation
     floor_size=[10.0, 10.0],        # half floor size in x and y direction
     reset_map_layout=True,
     obstacle_size_range=[1.0, 4.0],
@@ -14,4 +15,11 @@ common_configs = AD(
     min_robot_to_goal_dist=4.0,
     integrator='euler',  # options: euler, rk4, dopri5
     barrier_truncation_thresh=-0.1,  # if the value of barrier goes below this, the episode is truncated
+    tensor_return=True,
+    reward_dist_coef=1.0,
+    reward_goal_coef=1.0,
+    reward_safety_coef=10.0,
+    reward_gridlock_coef=1.0,
+    gridlock_check_duration=10, #number of timesteps to keep the velocity data for gridlock check
+    gridlock_threshold=0.01
 )

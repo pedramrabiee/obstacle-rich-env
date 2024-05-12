@@ -4,14 +4,14 @@ import inspect
 unicycle = dict(
     name='unicycle',
     action_bound=dict(low=(-4.0, -1.0), high=(4.0, 1.0)),
-    bound_action=False,
+    bound_action=True,
 )
 
 
 double_integrator = dict(
     name='double_integrator',
     action_bound=dict(low=(-4.0, -1.0), high=(4.0, 1.0)),
-    bound_action=False,
+    bound_action=True,
 )
 
 

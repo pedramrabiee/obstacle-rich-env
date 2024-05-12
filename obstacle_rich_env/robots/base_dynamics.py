@@ -17,15 +17,25 @@ class BaseDynamics(AffineInControlDynamics):
 
     def initialize_states_from_pos(self, pos):
         """
-        Upon initializing placing the robot this method is called to randomize the states are than
+        Upon initializing placing the robot this method is called to randomize the state are than
          position for robot placement and state initialization.
         """
         raise NotImplementedError
 
     def build_observation_space(self):
-        return dict(states=Box(-np.inf, np.inf, (self.state_dim,), dtype=np.float64))
+        return dict(state=Box(-np.inf, np.inf, (self.state_dim,), dtype=np.float64))
+
+    def build_custom_observation_space(self):
+        """
+        You can build custom observation space here for your specific purposes. For example,
+         you can have cos(theta), sin(theta) in place of theta for your network trainings
+        """
+        return {}
+
+    def get_custom_state(self, state):
+        pass
 
     def build_action_space(self):
         if self.action_bound is not None:
-            return Box(self.action_bound['low'], self.action_bound['high'], (self.action_dim,), dtype=np.float64)
+            return Box(np.array(self.action_bound['low']), np.array(self.action_bound['high']), (self.action_dim,), dtype=np.float64)
         return Box(-np.inf, np.inf, (self.action_dim,), dtype=np.float64)
