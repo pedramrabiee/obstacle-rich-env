@@ -58,8 +58,8 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         # vel_queue
         self._vel_queue = None
 
-
         self.screen = None
+
 
     def set_seed(self, seed: int | None = None) -> None:
         """Set internal random next_state seeds."""
@@ -383,3 +383,9 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         }
         req_funcs = [obs_funcs[key] for key in obs_keys]
         return lambda x: torch.cat([func(x) for func in req_funcs], dim=-1).detach()
+
+
+    def set_config(self, new_config: dict):
+        for k, v in new_config.items():
+            assert k in self.config, f"Key {k} is not a valid config key."
+            self.config[k] = v
