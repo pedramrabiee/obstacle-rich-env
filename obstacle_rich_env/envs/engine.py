@@ -96,7 +96,8 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
               seed: int | None = None,
               options: dict[str, Any] | None = None,
               ):
-        self.set_seed(seed)
+        if seed is not None:
+            self.set_seed(seed)
 
         if self.map is None or self.config.reset_map_layout:
             self.map = Map(robot=self.robot, layout=self.config['map_layout'], cfg=self.config,
@@ -264,6 +265,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             os.remove(self.map_image)
             pygame.display.quit()
             pygame.quit()
+            self.screen = None
 
     @property
     def robot_state_np(self):

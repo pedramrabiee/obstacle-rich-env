@@ -1,6 +1,7 @@
 from attrdict import AttrDict as AD
 
 common_configs = AD(
+    seed=125392,
     timestep=0.05,
     max_episode_steps=10,
     observation_flatten=False,
