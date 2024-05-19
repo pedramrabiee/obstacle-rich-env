@@ -60,7 +60,6 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
         self.screen = None
 
-
     def set_seed(self, seed: int | None = None) -> None:
         """Set internal random next_state seeds."""
         self._seed = 1523876 if seed is None else seed
@@ -151,7 +150,6 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         else:
             return self.barrier.get_min_barrier_at(self.robot_state).squeeze().item() < 0.0
 
-
     def reward(self):
         reward = 0.0
         dist_to_goal = self.dist_to_goal()
@@ -191,7 +189,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         return obs
 
     def terminated(self):
-        return self.dist_to_robot(self.goal_state_np) <= self.config.goal_size
+        return self.dist_to_goal() <= self.config.goal_size
 
     def truncated(self):
         return self._step > self.config.max_episode_steps or (self.barrier.get_min_barrier_at(
@@ -254,11 +252,10 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
     def push_vel(self):
         if self._vel_queue is None:
             self._vel_queue = deque()
-    #     TODO: Fix this
+        #     TODO: Fix this
         self._vel_queue.appendleft(self.robot_state[2])
         while len(self._vel_queue) > self.config.gridlock_check_duration:
             self._vel_queue.pop()
-
 
     def close(self):  # Part of Gym interface
         if self.screen is not None:
@@ -286,8 +283,11 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
             # Set up the display
             self.width, self.height = 800, 800
-            self.screen = pygame.display.set_mode((self.width, self.height))
-            pygame.display.set_caption("Obstacle Rich Environment")
+            if self.render_mode == "human":
+                self.screen = pygame.display.set_mode((self.width, self.height))
+                pygame.display.set_caption("Obstacle Rich Environment")
+            else:
+                self.screen = pygame.Surface((self.width, self.height))
 
             # Generate map image using Matplotlib
             self.map_image = self._generate_map_image()
@@ -385,7 +385,6 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         }
         req_funcs = [obs_funcs[key] for key in obs_keys]
         return lambda x: torch.cat([func(x) for func in req_funcs], dim=-1).detach()
-
 
     def set_config(self, new_config: dict):
         for k, v in new_config.items():
