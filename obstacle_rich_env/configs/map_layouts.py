@@ -2,15 +2,15 @@ from attrdict import AttrDict as AD
 
 map_layout_goal0 = dict(
     geoms=(
-        ('circle', AD(center=[-10.0, -10.0], radius=0.01)),
+        ('cylinder', AD(center=[-10.0, -10.0], radius=0.01)),
     ),
     velocity=(2, [-1.0, 9.0]),
 )
 
 map_layout_goal1 = dict(
     geoms=(
-        ('circle', AD(center=[-7.5, 0.0], radius=1.0)),
-        ('circle', AD(center=[7.5, 0.0], radius=1.0)),
+        ('cylinder', AD(center=[-7.5, 0.0], radius=1.0)),
+        ('cylinder', AD(center=[7.5, 0.0], radius=1.0)),
     ),
     velocity=(2, [-1.0, 9.0]),
 )
