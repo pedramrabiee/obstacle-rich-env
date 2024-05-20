@@ -161,7 +161,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             reward += self.config.reward_goal_coef
         # Grid lock penalty
         if self.gridlocked():
-            reward -= reward_gridlock_coef
+            reward -= self.config.reward_gridlock_coef
         # Safety violation penalty
         min_barrier = self.barrier.get_min_barrier_at(self.robot_state).squeeze().item()
         if min_barrier < 0:
