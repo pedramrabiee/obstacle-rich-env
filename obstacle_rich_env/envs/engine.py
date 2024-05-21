@@ -189,10 +189,10 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         return obs
 
     def terminated(self):
-        return self.dist_to_goal() <= self.config.goal_size
+        return self._step > self.config.max_episode_steps
 
     def truncated(self):
-        return self._step > self.config.max_episode_steps or (self.barrier.get_min_barrier_at(
+        return (self.barrier.get_min_barrier_at(
             self.robot_state) < self.config.barrier_truncation_thresh).squeeze().item()
 
     def spawn_robot(self):
