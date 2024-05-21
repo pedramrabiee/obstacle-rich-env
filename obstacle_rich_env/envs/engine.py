@@ -118,7 +118,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         if self.render_mode == "human":
             self.render()
         obs = self.obs()
-        return obs, dict(safety_violated=self._safety_violated(obs))
+        return obs, dict(safety_violated=self._safety_violated(obs), success=self._success())
 
     def step(self, action):
         action = action if torch.is_tensor(action) else torch.from_numpy(action)
@@ -142,7 +142,8 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
         # TODO: Implement cost function and add cost to info
         obs = self.obs()
-        return obs, reward, self.terminated(), self.truncated(), dict(safety_violated=self._safety_violated(obs))
+        return obs, reward, self.terminated(), self.truncated(), dict(safety_violated=self._safety_violated(obs),
+                                                                      success=self._success())
 
     def _safety_violated(self, obs):
         if not self.observation_flatten and 'barriers' in obs:
@@ -194,6 +195,9 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
     def truncated(self):
         return (self.barrier.get_min_barrier_at(
             self.robot_state) < self.config.barrier_truncation_thresh).squeeze().item()
+
+    def _success(self):
+        return self.dist_to_goal() < self.config.goal_size
 
     def spawn_robot(self):
         """Sample a new safe robot state"""
