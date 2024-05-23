@@ -20,7 +20,7 @@ common_configs = AD(
     reward_dist_coef=1.0,
     reward_goal_coef=1.0,
     reward_safety_coef=10.0,
-    reward_gridlock_coef=1.0,
+    reward_gridlock_coef=0.0,
     gridlock_check_duration=10, #number of timesteps to keep the velocity data for gridlock check
     gridlock_threshold=0.01
 )
