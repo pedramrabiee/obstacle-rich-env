@@ -77,7 +77,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             obs_space_dict.update(custom_observation_space)
 
         # build goal space
-        if 'goal_pos' in self.config.obs_key_to_return:
+        if 'goal_robot_diff' in self.config.obs_key_to_return:
             obs_space_dict.update(self._build_goal_observation_space())
 
         # build barrier space
@@ -176,8 +176,9 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             obs.update({'state': self.robot_state_np})
         if 'custom_state' in self.config.obs_key_to_return:
             obs.update({'custom_state': self.robot.get_custom_state(self.robot_state).squeeze().cpu().detach().numpy()})
-        if 'goal_pos' in self.config.obs_key_to_return:
-            obs.update({'goal_pos': self.goal_state_np})
+        # TODO: in the following the assumption is that the position states are the first two on the robot states
+        if 'goal_robot_diff' in self.config.obs_key_to_return:
+            obs.update({'goal_robot_diff': self.goal_state_np - self.robot_state_np[:2]})
         if 'barriers' in self.config.obs_key_to_return:
             obs.update({'barriers': torch.hstack(
                 self.barrier.compute_barriers_at(self.robot_state)).squeeze().cpu().detach().numpy()})
@@ -358,7 +359,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         return image_path
 
     def _build_goal_observation_space(self):
-        return dict(goal_pos=Box(-np.inf, np.inf, (2,), dtype=np.float64))
+        return dict(goal_robot_diff=Box(-np.inf, np.inf, (2,), dtype=np.float64))
 
     def _build_barrier_observation_space(self):
         return dict(barriers=Box(-np.inf, np.inf, (self.barrier.num_barriers,), dtype=np.float64))
@@ -381,10 +382,11 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         return pixel_x, pixel_y
 
     def make_obs_functional(self, obs_keys):
+        # TODO: in the following the assumption is that the position states are the first two on the robot states
         obs_funcs = {
             'state': lambda x: x,
             'custom_state': lambda x: self.robot.get_custom_state(x),
-            'goal_pos': lambda x: self.goal_state.to(x.device).repeat(x.shape[0], 1),
+            'goal_robot_diff': lambda x: self.goal_state.to(x.device).repeat(x.shape[0], 1) - x[:, :2],
             'barriers': lambda x: torch.hstack(self.barrier.compute_barriers_at(x)),
         }
         req_funcs = [obs_funcs[key] for key in obs_keys]
