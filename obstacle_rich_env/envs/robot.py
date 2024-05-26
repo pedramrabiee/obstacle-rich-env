@@ -20,6 +20,9 @@ class Robot:
     def initialize_states_from_pos(self, pos):
         return self.dynamics.initialize_states_from_pos(pos=pos)
 
+    def zero_pad_states_from_pos(self, pos):
+        return self.dynamics.zero_pad_states_from_pos(pos=pos)
+
     def build_observation_space(self):
         return self.dynamics.build_observation_space()
 
@@ -31,6 +34,12 @@ class Robot:
 
     def get_custom_state(self, state):
         return self.dynamics.get_custom_state(state)
+
+    def get_robot_pos(self, state):
+        return self.dynamics.get_robot_pos(state)
+
+    def get_robot_vel(self, state):
+        return self.dynamics.get_robot_vel(state)
 
     @property
     def state_dim(self):

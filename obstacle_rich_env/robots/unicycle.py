@@ -3,6 +3,7 @@ from obstacle_rich_env.robots.base_dynamics import BaseDynamics
 import numpy as np
 from gymnasium.spaces import Box
 
+
 class UnicycleDynamics(BaseDynamics):
     def __init__(self, state_dim=4, action_dim=2, params=None, **kwargs):
         super().__init__(state_dim, action_dim, params, **kwargs)
@@ -40,3 +41,23 @@ class UnicycleDynamics(BaseDynamics):
     def initialize_states_from_pos(self, pos):
         return np.concatenate([pos, np.zeros((pos.shape[0], 1)),
                                self.random_generator.uniform(low=0, high=2 * np.pi, size=(pos.shape[0], 1))], axis=1)
+
+    def zero_pad_states_from_pos(self, pos):
+        if torch.is_tensor(pos):
+            res = torch.zeros((pos.shape[0], self._state_dim))
+            res[:, :2] = pos
+            return res
+
+        res = np.zeros((pos.shape[0], self._state_dim))
+        res[:, :2] = pos
+        return res
+
+    def get_robot_pos(self, state):
+        if state.ndim == 1:
+            return state[:2]
+        return state[:, :2]
+
+    def get_robot_vel(self, state):
+        if state.ndim == 1:
+            return state[2]
+        return state[:, 2]
