@@ -309,7 +309,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             pygame.draw.circle(self.goal_sprite, (255, 255, 255), (20, 20), 5)  # Goal center dot
 
             # Set robot and goal positions
-            self.robot_pos_render = self._coords_to_pixel(self.robot_state_np[:2])
+            self.robot_pos_render = self._coords_to_pixel(self.robot.get_robot_pos(self.robot_state).squeeze().cpu().detach().numpy())
             self.goal_pos_render = self._coords_to_pixel(self.goal_pos_np)
 
         else:
@@ -320,7 +320,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             self.screen.blit(self.map_surface, (0, 0))
 
             # Update robot position
-            self.robot_pos_render = self._coords_to_pixel(self.robot_state_np[:2])
+            self.robot_pos_render = self._coords_to_pixel(self.robot.get_robot_pos(self.robot_state).squeeze().cpu().detach().numpy())
 
             # Draw the robot
             robot_rect = self.robot_sprite.get_rect(center=self.robot_pos_render)
