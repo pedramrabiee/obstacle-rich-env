@@ -4,7 +4,6 @@ import gymnasium
 import gymnasium.spaces
 from gymnasium.core import RenderFrame
 from gymnasium.spaces import Box
-
 from obstacle_rich_env.envs.map import Map
 from obstacle_rich_env.envs.robot import Robot
 import numpy as np
@@ -18,6 +17,7 @@ import matplotlib
 import pygame
 import os
 from collections import deque
+from obstacle_rich_env.envs.utils import FixedSizeTensorStack
 
 matplotlib.use('Agg')  # Use the 'Agg' backend for non-interactive plotting
 
@@ -30,6 +30,7 @@ class ResamplingError(AssertionError):
 class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
     def __init__(self, config: {}, render_mode=None):
         gymnasium.utils.EzPickle.__init__(self, config=config)
+        self.num_envs = 1
 
         self.config = AD(config)
         self.observation_flatten = self.config['observation_flatten']
@@ -49,13 +50,15 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
         # Make spaces
         self.build_observation_space()
-        self.action_space = self.robot.build_action_space()
+        self.build_action_space()
 
         # Set map back to None
         self.robot_state, self.goal_pos = None, None
-        # vel_queue
+
+        # Set velocity queue to None
         self._vel_queue = None
 
+        # Set rendering screen to None
         self.screen = None
 
     def set_seed(self, seed: int | None = None) -> None:
@@ -82,12 +85,16 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         if 'barriers' in self.config.obs_key_to_return:
             obs_space_dict.update(self._build_barrier_observation_space())
 
-        self.obs_space_dict = gymnasium.spaces.Dict(obs_space_dict)
+        self.obs_space_dict = gymnasium.spaces.Dict(self._vectorize_obs_space(obs_space_dict))
         self.observation_space = self.obs_space_dict
 
         if self.observation_flatten:
             self.observation_space = gymnasium.spaces.utils.flatten_space(self.obs_space_dict)
             self.obs_flat_size = self.observation_space.shape[0]
+
+    def build_action_space(self):
+        self.action_space = self._vectorize_obs_space(self.robot.build_action_space())
+        self.action_space.seed(self._seed)
 
     def reset(self, *,
               seed: int | None = None,
@@ -99,15 +106,17 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         if self.map is None or self.config.reset_map_layout:
             self.map = Map(robot=self.robot, layout=self.config['map_layout'], cfg=self.config,
                            random_generator=self.random_generator)
+        # Spawn robot and goal
+        self.spawn_robot_and_goal()
 
-        # Spawn robot and sample state
-        self.spawn_robot()
+        # Do after spawn tasks
+        self.after_spawn()
 
-        # Spawn goal
-        self.spawn_goal()
+        # Store last distance to goal for reward calculation
         self.last_dist_to_goal = self.dist_to_goal()
 
-        self._step = 0
+        # Reset step counter
+        self._ep_step = np.array([0] * self.num_envs)
 
         # Push velocity to memory
         self._vel_queue = None
@@ -122,10 +131,12 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
     def step(self, action):
         action = action if torch.is_tensor(action) else torch.from_numpy(action)
+        if action.ndim == 1:
+            action = action.unsqueeze(0)
         next_state = odeint(func=lambda t, y: partial(self.robot.dynamics.rhs,
                                                       action=action)(y),
                             y0=self.robot_state,
-                            t=torch.tensor([0.0, self.timestep]), method=self.config.integrator)[-1].squeeze().detach()
+                            t=torch.tensor([0.0, self.timestep]), method=self.config.integrator)[-1].detach()
 
         self.robot_state = next_state
 
@@ -134,7 +145,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
         reward = self.reward()
 
-        self._step += 1
+        self._ep_step += 1
 
         # Call render
         if self.render_mode == "human":
@@ -142,61 +153,88 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
         obs = self.obs()
         return obs, reward, self.terminated(), self.truncated(), dict(safety_violated=self._safety_violated(obs),
-                                                                      success=self._success().item())
+                                                                      success=self._success())
 
     def _safety_violated(self, obs):
         if not self.observation_flatten and 'barriers' in obs:
-            return obs['barriers'].min() < 0.0
+            res = (obs['barriers'].min(axis=-1, keepdims=True) < 0.0).astype(float)
         else:
-            return self.barrier.get_min_barrier_at(self.robot_state).squeeze().item() < 0.0
+            res = (self.barrier.get_min_barrier_at(self.robot_state).squeeze(0).cpu().numpy() < 0.0).astype(float)
+
+        return res.squeeze().item() if self.num_envs == 1 else res
 
     def reward(self):
-        reward = 0.0
+        reward = torch.zeros((self.robot_state.shape[0], 1))
         dist_to_goal = self.dist_to_goal()
-        # Distance to goal reward
-        reward += (self.last_dist_to_goal.item() - dist_to_goal.item()) * self.config.reward_dist_coef
-        self.last_dist_to_goal = dist_to_goal
-        # Goal achieved
-        if self.goal_met().item():
-            reward += self.config.reward_goal_coef
-        # Grid lock penalty
-        if self.gridlocked():
-            reward -= self.config.reward_gridlock_coef
-        # Safety violation penalty
-        min_barrier = self.barrier.get_min_barrier_at(self.robot_state).squeeze().item()
-        if min_barrier < 0:
-            reward += min_barrier * self.config.reward_safety_coef
 
-        return reward
+        # Distance to goal reward
+        reward += (self.last_dist_to_goal - dist_to_goal) * self.config.reward_dist_coef
+        self.last_dist_to_goal = dist_to_goal
+
+        # Goal achieved
+        condition = self.dist_to_goal() - self.config.goal_size
+        reward += torch.where(condition < 0.0, self.config.reward_goal_coef * (1.0 - condition / self.config.goal_size),
+                              0.0)
+
+        # Grid lock penalty
+        reward -= self.gridlocked() * self.config.reward_gridlock_coef
+
+        # Safety violation penalty
+        min_barrier = self.barrier.get_min_barrier_at(self.robot_state) - self.config.barrier_reward_activation_thresh
+        reward += torch.where(min_barrier < 0.0,
+                              min_barrier * self.config.reward_safety_coef,
+                              0.0)
+
+        reward = reward if len(reward) > 1 else reward.squeeze()
+        return reward.cpu().detach().numpy()
 
     def obs(self):
         obs = {}
         if 'state' in self.config.obs_key_to_return:
             obs.update({'state': self.robot_state_np})
         if 'custom_state' in self.config.obs_key_to_return:
-            obs.update({'custom_state': self.robot.get_custom_state(self.robot_state).squeeze().cpu().detach().numpy()})
+            obs.update(
+                {'custom_state': self.robot.get_custom_state(self.robot_state).squeeze(0).cpu().detach().numpy()})
         if 'goal_robot_diff' in self.config.obs_key_to_return:
-            obs.update({'goal_robot_diff': self.goal_pos_np - self.robot.get_robot_pos(self.robot_state).squeeze().cpu().detach().numpy()})
+            obs.update({'goal_robot_diff': self.goal_pos_np - self.robot.get_robot_pos(
+                self.robot_state).squeeze(0).cpu().detach().numpy()})
         if 'barriers' in self.config.obs_key_to_return:
             obs.update({'barriers': torch.hstack(
-                self.barrier.compute_barriers_at(self.robot_state)).squeeze().cpu().detach().numpy()})
+                self.barrier.compute_barriers_at(self.robot_state)).squeeze(0).cpu().detach().numpy()})
 
         if self.observation_flatten:
-            obs = gymnasium.spaces.utils.flatten(self.obs_space_dict, obs)
+            if self.num_envs > 1:
+                flattened_obs = []
+                for key in self.obs_space_dict.spaces.keys():
+                    flattened_obs.append(obs[key].reshape(obs[key].shape[0], -1))
+                obs = np.concatenate(flattened_obs, axis=1)
+            else:
+                obs = gymnasium.spaces.utils.flatten(self.obs_space_dict, obs)
 
         assert self.observation_space.contains(obs), f'Bad obs {obs} {self.observation_space}'
 
         return obs
 
     def terminated(self):
-        return self._step > self.config.max_episode_steps
+        _terminated = self._ep_step > self.config.max_episode_steps
+        return _terminated[0] if self.num_envs == 1 else np.expand_dims(_terminated, 1)
 
     def truncated(self):
-        return (self.barrier.get_min_barrier_at(
-            self.robot_state) < self.config.barrier_truncation_thresh).squeeze().item()
+        _truncated = (self.barrier.get_min_barrier_at(
+            self.robot_state) < self.config.barrier_truncation_thresh).squeeze(0).cpu().detach().numpy()
+
+        return _truncated[0] if self.num_envs == 1 else _truncated
 
     def _success(self):
-        return self.dist_to_goal() < self.config.goal_size
+        res = (self.dist_to_goal() < self.config.goal_size).double().numpy()
+        return res.squeeze().item() if self.num_envs == 1 else res
+
+    def spawn_robot_and_goal(self):
+        # Spawn robot and sample state
+        self.spawn_robot()
+
+        # Spawn goal
+        self.spawn_goal()
 
     def spawn_robot(self):
         """Sample a new safe robot state"""
@@ -208,7 +246,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
                 dim=1) > self.config.robot_init_thresh).nonzero().squeeze()
             if passed_indices.numel() > 0:
                 index = passed_indices[0]
-                self.robot_state = robot_state[index]
+                self.robot_state = robot_state[index].unsqueeze(0)
                 break
         else:
             raise ResamplingError('Failed to place robot')
@@ -229,10 +267,13 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
                 if passed_indices.numel() > 0:
                     index = passed_indices[0]
                     # The robot.get_robot_pos method extract the position date from the state data and returns it
-                    self.goal_pos = self.robot.get_robot_pos(goal_state[index])
+                    self.goal_pos = self.robot.get_robot_pos(goal_state[index]).unsqueeze(0)
                     break
         else:
             raise ResamplingError('Failed to place robot')
+
+    def after_spawn(self):
+        pass
 
     def dist_to_robot(self, xy: torch.tensor):
         if xy.ndim == 2:
@@ -243,22 +284,21 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         return self.dist_to_robot(self.goal_pos)
 
     def goal_met(self):
-        return self.dist_to_goal() < self.config.goal_size
+        return (self.dist_to_goal() < self.config.goal_size).double()
 
     def gridlocked(self):
-        if not self.goal_met():
-            vels = torch.stack(tuple(self._vel_queue))
-            rms = torch.norm(vels) / torch.sqrt(torch.tensor(vels.numel()))
-            if rms.item() < self.config.gridlock_threshold:
-                return True
-        return False
+        goal_not_met = 1.0 - self.goal_met()
+        vel_cond = (torch.sqrt(
+            torch.mean(self._vel_queue.stack ** 2, dim=-1, keepdim=True)) < self.config.gridlock_threshold).double()
+        return goal_not_met * vel_cond
 
     def push_vel(self):
         if self._vel_queue is None:
-            self._vel_queue = deque([torch.tensor(self.config.gridlock_threshold * self.config.gridlock_check_duration)] * self.config.gridlock_check_duration)
-        self._vel_queue.appendleft(self.robot.get_robot_vel(self.robot_state))
-        while len(self._vel_queue) > self.config.gridlock_check_duration:
-            self._vel_queue.pop()
+            self._vel_queue = FixedSizeTensorStack(batch_size=self.num_envs,
+                                                   max_length=self.config.gridlock_check_duration,
+                                                   init_value=self.config.gridlock_threshold * self.config.gridlock_check_duration)
+
+        self._vel_queue.append(self.robot.get_robot_vel(self.robot_state).unsqueeze(1))
 
     def close(self):  # Part of Gym interface
         if self.screen is not None:
@@ -269,11 +309,11 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
     @property
     def robot_state_np(self):
-        return self.robot_state.squeeze().cpu().detach().numpy()
+        return self.robot_state.squeeze(0).cpu().detach().numpy()
 
     @property
     def goal_pos_np(self):
-        return self.goal_pos.cpu().detach().numpy()
+        return self.goal_pos.squeeze(0).cpu().detach().numpy()
 
     @property
     def barrier(self):
@@ -285,7 +325,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             pygame.init()
 
             # Set up the display
-            self.width, self.height = 800, 800
+            self._make_screen_size()
             if self.render_mode == "human":
                 self.screen = pygame.display.set_mode((self.width, self.height))
                 pygame.display.set_caption("Obstacle Rich Environment")
@@ -299,19 +339,12 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             self.map_surface = pygame.image.load(self.map_image)
             self.map_surface = pygame.transform.scale(self.map_surface, (self.width, self.height))
 
+            self._robot_sprite_radius = 20
+            self._goal_sprite_radius = int(self.config.goal_size / (2 * self.floor_size[0]) * self.width)
+
             # Initialize robot and goal sprites
-            self.robot_sprite = pygame.Surface((40, 40), pygame.SRCALPHA)
-            pygame.draw.circle(self.robot_sprite, (135, 206, 250, 128), (20, 20), 20)  # Robot circle
-            pygame.draw.circle(self.robot_sprite, (255, 255, 255), (20, 20), 5)  # Robot center dot
-
-            self.goal_sprite = pygame.Surface((40, 40), pygame.SRCALPHA)
-            pygame.draw.circle(self.goal_sprite, (144, 238, 144, 128), (20, 20), 20)  # Goal circle
-            pygame.draw.circle(self.goal_sprite, (255, 255, 255), (20, 20), 5)  # Goal center dot
-
-            # Set robot and goal positions
-            self.robot_pos_render = self._coords_to_pixel(self.robot.get_robot_pos(self.robot_state).squeeze().cpu().detach().numpy())
-            self.goal_pos_render = self._coords_to_pixel(self.goal_pos_np)
-
+            self._create_sprites()
+            self._update_render_position()
         else:
             # Clear the screen
             self.screen.fill((255, 255, 255))
@@ -319,16 +352,8 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             # Draw the map image
             self.screen.blit(self.map_surface, (0, 0))
 
-            # Update robot position
-            self.robot_pos_render = self._coords_to_pixel(self.robot.get_robot_pos(self.robot_state).squeeze().cpu().detach().numpy())
-
-            # Draw the robot
-            robot_rect = self.robot_sprite.get_rect(center=self.robot_pos_render)
-            self.screen.blit(self.robot_sprite, robot_rect)
-
-            # Draw the goal
-            goal_rect = self.goal_sprite.get_rect(center=self.goal_pos_render)
-            self.screen.blit(self.goal_sprite, goal_rect)
+            # Update render positions and draw
+            self._update_render_position()
 
         if self.render_mode == "human":
             # Update the display
@@ -336,6 +361,18 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         else:
             # Get the pixel data from the current screen
             return np.transpose(pygame.surfarray.array3d(self.screen), (1, 0, 2))
+
+    def _make_screen_size(self):
+        max_width = 1920
+        max_height = 1080
+        aspect_ratio = self.floor_size[0] / self.floor_size[1]
+
+        if max_height * aspect_ratio <= max_width:
+            self.height = max_height
+            self.width = int(max_height * aspect_ratio)
+        else:
+            self.width = max_width
+            self.height = int(max_width / aspect_ratio)
 
     def _generate_map_image(self):
         X, Y, Z = self._generate_map_contours()
@@ -355,6 +392,61 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         plt.close(fig)
 
         return image_path
+
+    def _create_sprites(self):
+        self.robot_sprites = []
+        self.goal_sprites = []
+        colors = self._generate_colors(self.num_envs)
+        for i in range(self.num_envs):
+            self.robot_sprites.append(self._create_circle_sprite(circle_color=colors[i],
+                                                                 dot_color=(255, 255, 255),
+                                                                 radius=self._robot_sprite_radius))
+
+            self.goal_sprites.append(self._create_circle_sprite(circle_color=colors[i],
+                                                                dot_color=(0, 0, 0),
+                                                                radius=self._goal_sprite_radius,
+                                                                draw_cross=True))
+
+    def _update_render_position(self):
+        # Set robot and goal positions
+        if self.num_envs == 1:
+            robot_pos_render, goal_pos_render = self._update_robot_goal_pos(self.robot_state_np, self.goal_pos_np)
+            self._draw_robot_goal(self.robot_sprites[0], robot_pos_render, self.goal_sprites[0], goal_pos_render)
+        else:
+            for i in range(self.num_envs):
+                robot_pos_render, goal_pos_render = self._update_robot_goal_pos(self.robot_state_np[i],
+                                                                                self.goal_pos_np[i])
+                self._draw_robot_goal(self.robot_sprites[i], robot_pos_render, self.goal_sprites[i], goal_pos_render)
+
+    def _draw_robot_goal(self, robot_sprite, robot_pos_render, goal_sprite, goal_pos_render):
+        self.screen.blit(robot_sprite, robot_sprite.get_rect(center=robot_pos_render))
+        self.screen.blit(goal_sprite, goal_sprite.get_rect(center=goal_pos_render))
+
+    def _update_robot_goal_pos(self, robot_state, goal_pos):
+        robot_pos_render = self._coords_to_pixel(
+            self.robot.get_robot_pos(robot_state))
+        goal_pos_render = self._coords_to_pixel(goal_pos)
+        return robot_pos_render, goal_pos_render
+
+    def _create_circle_sprite(self, circle_color, dot_color, radius=20, draw_cross=False):
+        diameter = 2 * radius
+        sprite = pygame.Surface((diameter, diameter), pygame.SRCALPHA)
+        pygame.draw.circle(sprite, circle_color, (radius, radius), radius)
+
+        if draw_cross:
+            cross_size = int(radius * 0.6)
+            pygame.draw.line(sprite, dot_color, (radius - cross_size, radius), (radius + cross_size, radius), 2)
+            pygame.draw.line(sprite, dot_color, (radius, radius - cross_size), (radius, radius + cross_size), 2)
+        else:
+            pygame.draw.circle(sprite, dot_color, (radius, radius), int(radius * 0.25))  # Draw dot
+
+        return sprite
+
+    def _generate_colors(self, num_colors):
+        np.random.seed(0)  # For reproducibility
+        colors = np.random.randint(0, 255, (num_colors, 3))
+        colors = [(r, g, b, 128) for r, g, b in colors]
+        return colors
 
     def _build_goal_observation_space(self):
         return dict(goal_robot_diff=Box(-np.inf, np.inf, (2,), dtype=np.float64))
@@ -379,11 +471,37 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         pixel_y = int((-y + self.floor_size[1]) * (self.height / (2 * self.floor_size[1])))
         return pixel_x, pixel_y
 
+    def _vectorize_obs_space(self, obs_space):
+        if self.num_envs == 1:
+            return obs_space
+
+        def proccess_obs_space(space):
+            new_shape = (self.num_envs,) + space.shape
+            new_low = np.broadcast_to(space.low, new_shape)
+            new_high = np.broadcast_to(space.high, new_shape)
+            return gymnasium.spaces.Box(low=new_low, high=new_high, shape=new_shape,
+                                        dtype=space.dtype)
+
+        if isinstance(obs_space, gymnasium.spaces.Box):
+            return proccess_obs_space(obs_space)
+
+        elif isinstance(obs_space, dict) or isinstance(obs_space, gymnasium.spaces.Dict):
+            vectorized_obs_space = OrderedDict()
+            for key, space in obs_space.items():
+                if isinstance(space, gymnasium.spaces.Box):
+                    vectorized_obs_space[key] = proccess_obs_space(space)
+                else:
+                    raise NotImplementedError(f"Vectorization for space type {type(space)} is not implemented.")
+        else:
+            raise NotImplementedError(f"Vectorization for space type {type(space)} is not implemented.")
+        return vectorized_obs_space if isinstance(obs_space, dict) else gymnasium.spaces.Dict(vectorized_obs_space)
+
     def make_obs_functional(self, obs_keys):
         obs_funcs = {
             'state': lambda x: x,
             'custom_state': lambda x: self.robot.get_custom_state(x),
-            'goal_robot_diff': lambda x: self.goal_pos.to(x.device).repeat(x.shape[0], 1) - self.robot.get_robot_pos(x),
+            'goal_robot_diff': lambda x: self.goal_pos.to(x.device).repeat(x.shape[0] // self.num_envs,
+                                                                           1) - self.robot.get_robot_pos(x),
             'barriers': lambda x: torch.hstack(self.barrier.compute_barriers_at(x)),
         }
         req_funcs = [obs_funcs[key] for key in obs_keys]

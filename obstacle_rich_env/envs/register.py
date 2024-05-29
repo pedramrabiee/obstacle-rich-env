@@ -3,6 +3,9 @@ from obstacle_rich_env.configs.robot_configs import get_robot_configs
 from copy import deepcopy
 import importlib
 import gymnasium as gym
+import logging
+
+gym.logger.set_level(logging.ERROR)
 
 ROBOT_NAMES = ['unicycle']
 VERSION = 'v0'
@@ -35,6 +38,11 @@ class EnvBase:
             reg_config.update(config)
             register(id=env_name,
                      entry_point='obstacle_rich_env.envs.engine:Engine',
+                     kwargs={'config': reg_config})
+
+            env_name = f'{env_name}-Vectorized'
+            register(id=env_name,
+                     entry_point='obstacle_rich_env.envs.engine_vectorized:EngineVectorized',
                      kwargs={'config': reg_config})
 
 # =======================================#
