@@ -4,7 +4,7 @@ import gymnasium
 import gymnasium.spaces
 from gymnasium.core import RenderFrame
 from gymnasium.spaces import Box
-from obstacle_rich_env.envs.map import Map
+from obstacle_rich_env.envs.map import Map, EmptyMap
 from obstacle_rich_env.envs.robot import Robot
 import numpy as np
 import torch
@@ -45,8 +45,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         self.robot = Robot(robot_name=config['robot']['name'], random_generator=self.random_generator)
 
         # Initialize map to get the barrier dimension for the observation space
-        self.map = Map(robot=self.robot, layout=self.config['map_layout'], cfg=self.config,
-                       random_generator=self.random_generator)
+        self.initialize_map()
 
         # Make spaces
         self.build_observation_space()
@@ -85,6 +84,9 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         if 'barriers' in self.config.obs_key_to_return:
             obs_space_dict.update(self._build_barrier_observation_space())
 
+        if 'min_barrier' in self.config.obs_key_to_return:
+            obs_space_dict.update(self._build_min_barrier_observation_space())
+
         self.obs_space_dict = gymnasium.spaces.Dict(self._vectorize_obs_space(obs_space_dict))
         self.observation_space = self.obs_space_dict
 
@@ -96,6 +98,14 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         self.action_space = self._vectorize_obs_space(self.robot.build_action_space())
         self.action_space.seed(self._seed)
 
+    def initialize_map(self):
+        if self.config['map_is_off'] or len(self.config['map_layout']) == 0:
+            self.map = EmptyMap(robot=self.robot, layout=self.config['map_layout'], cfg=self.config,
+                                random_generator=self.random_generator)
+        else:
+            self.map = Map(robot=self.robot, layout=self.config['map_layout'], cfg=self.config,
+                               random_generator=self.random_generator)
+
     def reset(self, *,
               seed: int | None = None,
               options: dict[str, Any] | None = None,
@@ -104,8 +114,8 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             self.set_seed(seed)
 
         if self.map is None or self.config.reset_map_layout:
-            self.map = Map(robot=self.robot, layout=self.config['map_layout'], cfg=self.config,
-                           random_generator=self.random_generator)
+            self.initialize_map()
+
         # Spawn robot and goal
         self.spawn_robot_and_goal()
 
@@ -201,6 +211,8 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         if 'barriers' in self.config.obs_key_to_return:
             obs.update({'barriers': torch.hstack(
                 self.barrier.compute_barriers_at(self.robot_state)).squeeze(0).cpu().detach().numpy()})
+        if 'min_barrier' in self.config.obs_key_to_return:
+            obs.update({'min_barrier': self.barrier.get_min_barrier_at(self.robot_state).squeeze(0).cpu().detach().numpy()})
 
         if self.observation_flatten:
             if self.num_envs > 1:
@@ -454,6 +466,9 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
     def _build_barrier_observation_space(self):
         return dict(barriers=Box(-np.inf, np.inf, (self.barrier.num_barriers,), dtype=np.float64))
 
+    def _build_min_barrier_observation_space(self):
+        return dict(min_barrier=Box(-np.inf, np.inf, (1,), dtype=np.float64))
+
     def _generate_map_contours(self):
         x = np.linspace(-self.floor_size[0], self.floor_size[0], 500)
         y = np.linspace(-self.floor_size[1], self.floor_size[1], 500)
@@ -503,6 +518,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             'goal_robot_diff': lambda x: self.goal_pos.to(x.device).repeat(x.shape[0] // self.num_envs,
                                                                            1) - self.robot.get_robot_pos(x),
             'barriers': lambda x: torch.hstack(self.barrier.compute_barriers_at(x)),
+            'min_barriers': lambda x: self.barrier.get_min_barrier_at(x),
         }
         req_funcs = [obs_funcs[key] for key in obs_keys]
         return lambda x: torch.cat([func(x) for func in req_funcs], dim=-1).detach()

@@ -15,7 +15,7 @@ map_layout_goal1 = dict(
     velocity=(2, [-1.0, 9.0]),
 )
 
-map_layout_goal3 = dict(
+map_layout_goal2 = dict(
     geoms=(
         ('box', AD(center=[2.0, 1.5], size=[2.0, 2.0], rotation=0.0)),
         ('box', AD(center=[-2.5, 2.5], size=[1.25, 1.25], rotation=0.0)),
@@ -28,7 +28,7 @@ map_layout_goal3 = dict(
     velocity=(2, [-1.0, 9.0]),
 )
 
-map_layout_goal4 = dict(
+map_layout_goal3 = dict(
     geoms=(
         ('box', AD(size=[2.0, 2.0], num=2)),
         ('box', AD(num=2)),
@@ -39,3 +39,5 @@ map_layout_goal4 = dict(
     ),
     velocity=(2, [-1.0, 9.0]),
 )
+
+map_layout_goal4 = dict()

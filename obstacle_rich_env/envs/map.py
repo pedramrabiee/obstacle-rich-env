@@ -112,3 +112,18 @@ class Map:
 
     def _sample_rot(self):
         return self._generate_random(low=-np.pi, high=np.pi, size=1)[0]
+
+
+class EmptyMap(Map):
+    def make_barrier_from_map(self):
+        self.barrier = Barrier().assign(barrier_func=lambda x: 1.0 + 0.0 * vectorize_tensors(x).sum(-1),
+                                        rel_deg=1).assign_dynamics(self.dynamics)
+
+    def make_velocity_barrier(self):
+        pass
+
+    def update_geoms_layout(self):
+        pass
+
+    def make_position_barrier_from_map(self):
+        pass
