@@ -2,10 +2,11 @@ from attrdict import AttrDict as AD
 
 common_configs = AD(
     seed=125392,
+    map_is_off=False,
     timestep=0.05,
-    max_episode_steps=10,
+    max_episode_steps=100,
     observation_flatten=False,
-    obs_key_to_return=["state", "custom_state", "goal_robot_diff", "barriers"],        # provide a list of keys to include in the observation
+    obs_key_to_return=["state", "custom_state", "goal_robot_diff", "barriers", "min_barrier"],        # provide a list of keys to include in the observation
     floor_size=[10.0, 10.0],        # half floor size in x and y direction
     reset_map_layout=True,
     obstacle_size_range=[1.0, 4.0],
@@ -25,6 +26,6 @@ common_configs = AD(
     gridlock_check_duration=10, #number of timesteps to keep the velocity data for gridlock check
     gridlock_threshold=0.01,
     # vectorized env configs
-    num_envs=1,
+    num_envs=3,
     robot_goal_pair_queue_size=1000,
 )

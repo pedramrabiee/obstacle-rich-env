@@ -58,7 +58,7 @@ zero_base_dict = {}
 
 goal_all = {'task': 'goal'}
 
-goals = [deepcopy(zero_base_dict), deepcopy(zero_base_dict)]
+goals = [deepcopy(zero_base_dict)] * 5
 goal_base = base.copy('Goal', goal_all)
 
 map_layout_module = importlib.import_module(f'obstacle_rich_env.configs.map_layouts')
