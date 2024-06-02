@@ -1,7 +1,7 @@
 import obstacle_rich_env
 # import gymnasium as gym
 
-env = obstacle_rich_env.make('Unicycle-Goal4', render_mode="human")
+env = obstacle_rich_env.make('Unicycle-Goal3', render_mode="human")
 obs = env.reset(seed=10)
 print(obs)
 for i in range(100):
