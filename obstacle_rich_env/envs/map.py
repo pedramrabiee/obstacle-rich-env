@@ -1,6 +1,6 @@
 from attrdict import AttrDict as AD
 from hocbf_composition.barrier import Barrier, SoftCompositionBarrier
-from hocbf_composition.utils import *
+from hocbf_composition.utils.utils import *
 from obstacle_rich_env.envs.robot import Robot
 
 
