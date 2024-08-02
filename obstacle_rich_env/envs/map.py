@@ -1,5 +1,5 @@
 from attrdict import AttrDict as AD
-from hocbf_composition.barrier import Barrier, SoftCompositionBarrier
+from hocbf_composition.barrier import Barrier, SoftCompositionBarrier, NonSmoothCompositionBarrier
 from hocbf_composition.utils.utils import *
 from obstacle_rich_env.envs.robot import Robot
 
@@ -27,6 +27,10 @@ class Map:
                                                                  rule='i',
                                                                  infer_dynamics=True)
 
+        self.nonsmoothcomp_pos_barrier = NonSmoothCompositionBarrier(
+            cfg=self.cfg).assign_barriers_and_rule(barriers=[*self.pos_barriers],
+                                                   rule='i',
+                                                   infer_dynamics=True)
     def get_barriers(self):
         return self.pos_barriers, self.vel_barriers
 

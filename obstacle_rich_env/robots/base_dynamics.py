@@ -53,3 +53,6 @@ class BaseDynamics(AffineInControlDynamics):
 
     def get_robot_vel(self, state):
         raise NotImplementedError
+
+    def get_robot_rot(self, state):
+        raise NotImplementedError

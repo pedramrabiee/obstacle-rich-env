@@ -49,7 +49,8 @@ class EnvBase:
 # Common Environment Parameter Defaults  #
 # =======================================#
 
-base = EnvBase('', getattr(importlib.import_module(f'obstacle_rich_env.configs.common_configs'), 'common_configs'))
+base = EnvBase('', getattr(importlib.import_module(f'obstacle_rich_env.configs.common_configs'), 'common_configs')
+               + getattr(importlib.import_module(f'obstacle_rich_env.configs.lidar_configs'), 'lidar_configs'))
 zero_base_dict = {}
 
 # =======================================#
