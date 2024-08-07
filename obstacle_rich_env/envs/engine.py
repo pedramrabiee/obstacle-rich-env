@@ -18,6 +18,7 @@ import pygame
 import os
 from collections import deque
 from obstacle_rich_env.envs.utils import FixedSizeTensorStack
+from obstacle_rich_env.envs.lidar import Lidar
 
 matplotlib.use('Agg')  # Use the 'Agg' backend for non-interactive plotting
 
@@ -61,7 +62,8 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         self.screen = None
 
         if 'obs_lidar' in self.config.obs_key_to_return:
-            self.robot.mount_lidar(self.map, self.config)
+            self.obs_lidar = Lidar(self.map, self.robot, self.config)
+            self.robot.mount_lidar(self.obs_lidar)
 
     def set_seed(self, seed: int | None = None) -> None:
         """Set internal random next_state seeds."""

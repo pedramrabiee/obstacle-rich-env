@@ -19,8 +19,8 @@ class Robot:
             return dynamics_class(params=self._params, random_generator=self.random_generator)
         raise 'Robot dynamics not defined'
 
-    def mount_lidar(self, map, config):
-        self.lidar = Lidar(map, self, config)
+    def mount_lidar(self, lidar):
+        self.lidar = lidar
 
     def initialize_states_from_pos(self, pos):
         return self.dynamics.initialize_states_from_pos(pos=pos)
