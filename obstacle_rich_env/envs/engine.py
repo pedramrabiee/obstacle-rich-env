@@ -18,6 +18,7 @@ import pygame
 import os
 from collections import deque
 from obstacle_rich_env.envs.utils import FixedSizeTensorStack
+from obstacle_rich_env.envs.lidar import ObstacleLidar
 
 matplotlib.use('Agg')  # Use the 'Agg' backend for non-interactive plotting
 
@@ -60,6 +61,10 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         # Set rendering screen to None
         self.screen = None
 
+        if 'obstacle_lidar' in self.config.obs_key_to_return:
+            self.obstacle_lidar = ObstacleLidar(self.map, self.robot, self.config)
+            self.robot.mount_obstacle_lidar(self.obstacle_lidar)
+
     def set_seed(self, seed: int | None = None) -> None:
         """Set internal random next_state seeds."""
         self._seed = 1523876 if seed is None else seed
@@ -86,6 +91,9 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
 
         if 'min_barrier' in self.config.obs_key_to_return:
             obs_space_dict.update(self._build_min_barrier_observation_space())
+
+        if 'obstacle_lidar' in self.config.obs_key_to_return:
+            obs_space_dict.update(self._build_lidar_observation_space())
 
         self.obs_space_dict = gymnasium.spaces.Dict(self._vectorize_obs_space(obs_space_dict))
         self.observation_space = self.obs_space_dict
@@ -213,6 +221,9 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
                 self.barrier.compute_barriers_at(self.robot_state)).squeeze(0).cpu().detach().numpy()})
         if 'min_barrier' in self.config.obs_key_to_return:
             obs.update({'min_barrier': self.barrier.get_min_barrier_at(self.robot_state).squeeze(0).cpu().detach().numpy()})
+
+        if 'obstacle_lidar' in self.config.obs_key_to_return:
+            obs.update({'obstacle_lidar': self.robot.obstacle_lidar.get_lidar(self.robot_state).squeeze(0).cpu().detach().numpy()})
 
         if self.observation_flatten:
             if self.num_envs > 1:
@@ -469,6 +480,13 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
     def _build_min_barrier_observation_space(self):
         return dict(min_barrier=Box(-np.inf, np.inf, (1,), dtype=np.float64))
 
+    def _build_lidar_observation_space(self):
+        if self.config.return_cartesian:
+            return dict(obstacle_lidar=Box(-np.inf, np.inf, (self.config.ray_num, 2), dtype=np.float64))
+        else:
+            # TODO: Fix the bounds based on max_range and scan_angle
+            return dict(obstacle_lidar=Box(-np.inf, np.inf, (self.config.ray_num, 2), dtype=np.float64))
+
     def _generate_map_contours(self):
         x = np.linspace(-self.floor_size[0], self.floor_size[0], 500)
         y = np.linspace(-self.floor_size[1], self.floor_size[1], 500)
@@ -519,6 +537,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
                                                                            1) - self.robot.get_robot_pos(x),
             'barriers': lambda x: torch.hstack(self.barrier.compute_barriers_at(x)),
             'min_barriers': lambda x: self.barrier.get_min_barrier_at(x),
+            'obstacle_lidar': lambda x: self.robot.lidar.get_lidar(x)
         }
         req_funcs = [obs_funcs[key] for key in obs_keys]
         return lambda x: torch.cat([func(x) for func in req_funcs], dim=-1).detach()

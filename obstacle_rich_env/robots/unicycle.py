@@ -61,3 +61,8 @@ class UnicycleDynamics(BaseDynamics):
         if state.ndim == 1:
             return state[2]
         return state[:, 2]
+
+    def get_robot_rot(self, state):
+        if state.ndim == 1:
+            return state[3]
+        return state[:, 3:4]
