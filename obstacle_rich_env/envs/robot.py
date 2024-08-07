@@ -1,6 +1,5 @@
 import importlib.util
 from obstacle_rich_env.configs.robot_configs import get_robot_configs
-from obstacle_rich_env.envs.lidar import Lidar
 
 
 
@@ -19,8 +18,8 @@ class Robot:
             return dynamics_class(params=self._params, random_generator=self.random_generator)
         raise 'Robot dynamics not defined'
 
-    def mount_lidar(self, lidar):
-        self.lidar = lidar
+    def mount_obstacle_lidar(self, obstacle_lidar):
+        self.obstacle_lidar = obstacle_lidar
 
     def initialize_states_from_pos(self, pos):
         return self.dynamics.initialize_states_from_pos(pos=pos)

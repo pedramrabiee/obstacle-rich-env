@@ -1,14 +1,14 @@
 import torch
 
 # TODO: Generelize the LiDAR for both 2D and 3D Environment
-class Lidar:
+class ObstacleLidar:
     def __init__(self, map, robot, lidar_cfg):
         self.map = map
         self.robot = robot
         self.lidar_cfg = lidar_cfg
         # TODO: Sensor location and angle needs to read from robot config.
-        self.sensor_location = torch.tensor(lidar_cfg.sensor_mounting_location)
-        self.sensor_angle = torch.tensor(lidar_cfg.sensor_mounting_angle)
+        self.sensor_location = torch.tensor(lidar_cfg.sensor_mounting_xy)
+        self.sensor_angle = torch.tensor(lidar_cfg.sensor_mounting_yaw)
         self._mesh_maker()
 
     def get_lidar(self, x):
@@ -71,7 +71,7 @@ class Lidar:
 
     def _boundary_extractor(self, mesh):
         # Calculate barrier values
-        z = self.map.nonsmoothcomp_pos_barrier.min_barrier(mesh)
+        z = self.map.map_barrier.min_barrier(mesh)
         # Reshape z and mesh
         batch_size = mesh.shape[0] // (self.lidar_cfg.ray_num * self.lidar_cfg.ray_sampling_rate)
         reshaped_z = z.view(batch_size, self.lidar_cfg.ray_num, self.lidar_cfg.ray_sampling_rate, 1)

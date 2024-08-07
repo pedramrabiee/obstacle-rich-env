@@ -27,7 +27,7 @@ class Map:
                                                                  rule='i',
                                                                  infer_dynamics=True)
 
-        self.nonsmoothcomp_pos_barrier = NonSmoothCompositionBarrier(
+        self.map_barrier = NonSmoothCompositionBarrier(
             cfg=self.cfg).assign_barriers_and_rule(barriers=[*self.pos_barriers],
                                                    rule='i',
                                                    infer_dynamics=True)
