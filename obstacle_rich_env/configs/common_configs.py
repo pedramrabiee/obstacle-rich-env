@@ -1,14 +1,20 @@
 from attrdict import AttrDict as AD
 
+# Available keys for observation:
+#   state: Returns the system's dynamic state.
+#   custom_state: Provides user-defined custom states. For example, instead of angles, it can return the sine and cosine of the angles.
+#   goal_robot_diff: Outputs the difference between the goal and the robot's positions.
+#   barriers: Returns all barrier functions, including higher-order ones that enforce constraints.
+#   obstacle_lidar: Provides LiDAR data, representing the distance to obstacles along LiDAR rays.
+
+
 common_configs = AD(
     seed=125392,
     map_is_off=False,
     timestep=0.05,
     max_episode_steps=100,
     observation_flatten=False,
-    # obs_key_to_return=["state", "custom_state", "goal_robot_diff", "barriers", "min_barrier"],        # provide a list of keys to include in the observation
-    # obs_key_to_return=["state", "custom_state", "goal_robot_diff", "barriers"],          # provide a list of keys to include in the observation
-    obs_key_to_return=["state", "custom_state", "goal_robot_diff", "barriers", 'obstacle_lidar'],
+    obs_key_to_return=["state", "custom_state", "goal_robot_diff", "barriers", 'obstacle_lidar'], # provide a list of keys to include in the observation
     floor_size=[10.0, 10.0],        # half floor size in x and y direction
     reset_map_layout=True,
     obstacle_size_range=[1.0, 4.0],
