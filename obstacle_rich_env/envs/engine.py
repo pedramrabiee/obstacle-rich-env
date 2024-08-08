@@ -61,7 +61,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         # Set rendering screen to None
         self.screen = None
 
-        if 'obstacle_lidar' in self.config.obs_key_to_return:
+        if 'obstacle_lidar' in self.config.obs_key_to_return or 'obstacle_lidar_coor' in self.config.obs_key_to_return:
             self.obstacle_lidar = ObstacleLidar(self.map, self.robot, self.config)
             self.robot.mount_obstacle_lidar(self.obstacle_lidar)
 
@@ -95,6 +95,9 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         if 'obstacle_lidar' in self.config.obs_key_to_return:
             obs_space_dict.update(self._build_lidar_observation_space())
 
+        if 'obstacle_lidar_coor' in self.config.obs_key_to_return:
+            obs_space_dict.update(self._build_lidar_coor_observation_space())
+
         self.obs_space_dict = gymnasium.spaces.Dict(self._vectorize_obs_space(obs_space_dict))
         self.observation_space = self.obs_space_dict
 
@@ -112,7 +115,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
                                 random_generator=self.random_generator)
         else:
             self.map = Map(robot=self.robot, layout=self.config['map_layout'], cfg=self.config,
-                               random_generator=self.random_generator)
+                           random_generator=self.random_generator)
 
     def reset(self, *,
               seed: int | None = None,
@@ -210,20 +213,37 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         obs = {}
         if 'state' in self.config.obs_key_to_return:
             obs.update({'state': self.robot_state_np})
+
         if 'custom_state' in self.config.obs_key_to_return:
             obs.update(
                 {'custom_state': self.robot.get_custom_state(self.robot_state).squeeze(0).cpu().detach().numpy()})
+
         if 'goal_robot_diff' in self.config.obs_key_to_return:
             obs.update({'goal_robot_diff': self.goal_pos_np - self.robot.get_robot_pos(
                 self.robot_state).squeeze(0).cpu().detach().numpy()})
+
         if 'barriers' in self.config.obs_key_to_return:
             obs.update({'barriers': torch.hstack(
                 self.barrier.compute_barriers_at(self.robot_state)).squeeze(0).cpu().detach().numpy()})
-        if 'min_barrier' in self.config.obs_key_to_return:
-            obs.update({'min_barrier': self.barrier.get_min_barrier_at(self.robot_state).squeeze(0).cpu().detach().numpy()})
 
-        if 'obstacle_lidar' in self.config.obs_key_to_return:
-            obs.update({'obstacle_lidar': self.robot.obstacle_lidar.get_lidar(self.robot_state).squeeze(0).cpu().detach().numpy()})
+        if 'min_barrier' in self.config.obs_key_to_return:
+            obs.update(
+                {'min_barrier': self.barrier.get_min_barrier_at(self.robot_state).squeeze(0).cpu().detach().numpy()})
+
+        if 'obstacle_lidar' in self.config.obs_key_to_return and 'obstacle_lidar_coor' in self.config.obs_key_to_return:
+            dist, coord = self.robot.obstacle_lidar.get_lidar_and_coor(self.robot_state)
+            obs.update({
+                'obstacle_lidar': dist.squeeze(0).cpu().detach().numpy(),
+                'obstacle_lidar_coor': coord.squeeze(0).cpu().detach().numpy()
+            })
+        else:
+            if 'obstacle_lidar' in self.config.obs_key_to_return:
+                obs.update({'obstacle_lidar': self.robot.obstacle_lidar.get_lidar(self.robot_state).squeeze(
+                    0).cpu().detach().numpy()})
+
+            if 'obstacle_lidar_coor' in self.config.obs_key_to_return:
+                obs.update({'obstacle_lidar_coor': self.robot.obstacle_lidar.get_lidar_coor(self.robot_state).squeeze(
+                    0).cpu().detach().numpy()})
 
         if self.observation_flatten:
             if self.num_envs > 1:
@@ -481,11 +501,14 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         return dict(min_barrier=Box(-np.inf, np.inf, (1,), dtype=np.float64))
 
     def _build_lidar_observation_space(self):
+        return dict(obstacle_lidar=Box(-np.inf, np.inf, (self.config.ray_num,), dtype=np.float64))
+
+    def _build_lidar_coor_observation_space(self):
         if self.config.return_cartesian:
-            return dict(obstacle_lidar=Box(-np.inf, np.inf, (self.config.ray_num, 2), dtype=np.float64))
+            return dict(obstacle_lidar_coor=Box(-np.inf, np.inf, (self.config.ray_num, 2), dtype=np.float64))
         else:
             # TODO: Fix the bounds based on max_range and scan_angle
-            return dict(obstacle_lidar=Box(-np.inf, np.inf, (self.config.ray_num, 2), dtype=np.float64))
+            return dict(obstacle_lidar_coor=Box(-np.inf, np.inf, (self.config.ray_num, 2), dtype=np.float64))
 
     def _generate_map_contours(self):
         x = np.linspace(-self.floor_size[0], self.floor_size[0], 500)
@@ -537,7 +560,8 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
                                                                            1) - self.robot.get_robot_pos(x),
             'barriers': lambda x: torch.hstack(self.barrier.compute_barriers_at(x)),
             'min_barriers': lambda x: self.barrier.get_min_barrier_at(x),
-            'obstacle_lidar': lambda x: self.robot.lidar.get_lidar(x)
+            'obstacle_lidar': lambda x: self.robot.lidar.get_lidar(x),
+            'obstacle_lidar_coor': lambda x: self.robot.lidar.get_lidar_coor(x)
         }
         req_funcs = [obs_funcs[key] for key in obs_keys]
         return lambda x: torch.cat([func(x) for func in req_funcs], dim=-1).detach()

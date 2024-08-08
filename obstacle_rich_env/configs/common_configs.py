@@ -6,7 +6,7 @@ from attrdict import AttrDict as AD
 #   goal_robot_diff: Outputs the difference between the goal and the robot's positions.
 #   barriers: Returns all barrier functions, including higher-order ones that enforce constraints.
 #   obstacle_lidar: Provides LiDAR data, representing the distance to obstacles along LiDAR rays.
-
+#   obstacle_lidar_coor: Provides the coordinates of the intersection of LiDAR rays with obstacles.
 
 common_configs = AD(
     seed=125392,
@@ -14,7 +14,7 @@ common_configs = AD(
     timestep=0.05,
     max_episode_steps=100,
     observation_flatten=False,
-    obs_key_to_return=["state", "custom_state", "goal_robot_diff", "barriers", 'obstacle_lidar'], # provide a list of keys to include in the observation
+    obs_key_to_return=["state", "custom_state", "goal_robot_diff", "barriers", "obstacle_lidar", "obstacle_lidar_coor"], # provide a list of keys to include in the observation
     floor_size=[10.0, 10.0],        # half floor size in x and y direction
     reset_map_layout=True,
     obstacle_size_range=[1.0, 4.0],

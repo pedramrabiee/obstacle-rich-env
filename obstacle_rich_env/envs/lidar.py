@@ -11,7 +11,7 @@ class ObstacleLidar:
         self.sensor_angle = torch.tensor(lidar_cfg.sensor_mounting_yaw)
         self._mesh_maker()
 
-    def get_lidar(self, x):
+    def get_lidar_coor(self, x):
         # Repeat global mesh for each batch item
         vectorized_global_mesh = self.global_mesh.repeat(x.shape[0], 1)
 
@@ -26,10 +26,21 @@ class ObstacleLidar:
         if self.lidar_cfg.has_noise:
             boundary = self.add_noise(boundary)
 
-        if not self.lidar_cfg.return_cartesian:
-            boundary = self._cartesian_to_polar(boundary)
+        if self.lidar_cfg.return_cartesian:
+            return boundary
 
-        return boundary
+        return self._cartesian_to_polar(boundary - self.robot.get_robot_pos(x))
+
+    def get_lidar(self, x):
+        dist, _ = self.get_lidar_and_coor(x)
+        return dist
+
+    def get_lidar_and_coor(self, x):
+        coord = self.get_lidar_coor(x)
+        if self.lidar_cfg.return_cartesian:
+            return torch.norm(coord - self.robot.get_robot_pos(x).unsqueeze(1), 2, dim=-1), coord
+        return coord[..., 0], coord
+
 
     def _mesh_maker(self):
         range_space = torch.linspace(0, self.lidar_cfg.max_range, self.lidar_cfg.ray_sampling_rate, dtype=torch.float64)
