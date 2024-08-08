@@ -29,7 +29,7 @@ class ObstacleLidar:
         if self.lidar_cfg.return_cartesian:
             return boundary
 
-        return self._cartesian_to_polar(boundary - self.robot.get_robot_pos(x))
+        return self._cartesian_to_polar(boundary - self.robot.get_robot_pos(x).unsqueeze(1))
 
     def get_lidar(self, x):
         dist, _ = self.get_lidar_and_coor(x)
@@ -40,7 +40,6 @@ class ObstacleLidar:
         if self.lidar_cfg.return_cartesian:
             return torch.norm(coord - self.robot.get_robot_pos(x).unsqueeze(1), 2, dim=-1), coord
         return coord[..., 0], coord
-
 
     def _mesh_maker(self):
         range_space = torch.linspace(0, self.lidar_cfg.max_range, self.lidar_cfg.ray_sampling_rate, dtype=torch.float64)
@@ -55,7 +54,6 @@ class ObstacleLidar:
 
     def _cartesian_to_polar(self, points):
         raise NotImplementedError
-
 
     def _robot_to_world(self, points, pos, rot):
         batch_size = pos.shape[0]
