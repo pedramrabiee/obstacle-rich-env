@@ -1,5 +1,7 @@
 from attrdict import AttrDict as AD
 
+# For box and norm_box objects, if rotation is not provided. A randomised rotation is picked.
+
 map_layout_goal0 = dict()
 
 map_layout_goal1 = dict(

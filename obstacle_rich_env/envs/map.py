@@ -43,10 +43,16 @@ class Map:
                 barrier_func = make_circle_barrier_functional
                 alphas = make_linear_alpha_function_form_list_of_coef(cfg.obstacle_alpha)
             elif geom_type == 'box':
-                barrier_func = make_rectangular_barrier_functional
+                barrier_func = make_affine_rectangular_barrier_functional
+                alphas = make_linear_alpha_function_form_list_of_coef(cfg.obstacle_alpha)
+            elif geom_type == 'norm_box':
+                barrier_func = make_norm_rectangular_barrier_functional
                 alphas = make_linear_alpha_function_form_list_of_coef(cfg.obstacle_alpha)
             elif geom_type == 'boundary':
-                barrier_func = make_rectangular_boundary_functional
+                barrier_func = make_affine_rectangular_boundary_functional
+                alphas = make_linear_alpha_function_form_list_of_coef(cfg.boundary_alpha)
+            elif geom_type == 'norm_boundary':
+                barrier_func = make_norm_rectangular_boundary_functional
                 alphas = make_linear_alpha_function_form_list_of_coef(cfg.boundary_alpha)
             else:
                 raise NotImplementedError
