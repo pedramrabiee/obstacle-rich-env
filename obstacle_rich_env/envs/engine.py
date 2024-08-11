@@ -65,6 +65,10 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
             self.obstacle_lidar = ObstacleLidar(self.map, self.robot, self.config)
             self.robot.mount_obstacle_lidar(self.obstacle_lidar)
 
+
+        # make trajectory time
+        self._traj_times = torch.linspace(0.0, self.timestep, self.config.action_repeat + 1)
+
     def set_seed(self, seed: int | None = None) -> None:
         """Set internal random next_state seeds."""
         self._seed = 1523876 if seed is None else seed
@@ -157,7 +161,7 @@ class Engine(gymnasium.Env, gymnasium.utils.EzPickle):
         next_state = odeint(func=lambda t, y: partial(self.robot.dynamics.rhs,
                                                       action=action)(y),
                             y0=self.robot_state,
-                            t=torch.tensor([0.0, self.timestep]), method=self.config.integrator)[-1].detach()
+                            t=self._traj_times, method=self.config.integrator)[-1].detach()
 
         self.robot_state = next_state
 

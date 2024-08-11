@@ -12,6 +12,7 @@ common_configs = AD(
     seed=125392,
     map_is_off=False,
     timestep=0.05,
+    action_repeat=10,   # step function breaks the timestep to timestep / action_repeat for finer timestep during execution
     max_episode_steps=100,
     observation_flatten=False,
     obs_key_to_return=["state", "custom_state", "goal_robot_diff", "barriers", "obstacle_lidar", "obstacle_lidar_coor"], # provide a list of keys to include in the observation
