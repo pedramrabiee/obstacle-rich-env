@@ -80,34 +80,42 @@ class Map:
         updated_geom = []
 
         for geom_type, geom_data in self.layout.geoms:
-            if 'num' in geom_data and geom_data.num > 1:
-                # ignore center and rotation data
-                if 'center' in geom_data: del geom_data.center
-                if 'rotation' in geom_data: del geom_data.rotation
-            else:
-                geom_data.num = 1
-            for _ in range(geom_data.num):
+            num = 1
+            if 'num' in geom_data:
+                if geom_data.num > 1:
+                    # ignore center and rotation data
+                    if 'center' in geom_data: del geom_data.center
+                    if 'rotation' in geom_data: del geom_data.rotation
+                    num = geom_data.num
+                del geom_data.num
+
+            for _ in range(num):
                 if geom_type == 'box':
                     updated_geom.append(('box', self._make_box(geom_data)))
+                elif geom_type == 'norm_box':
+                    updated_geom.append(('norm_box', self._make_box(geom_data)))
                 elif geom_type == 'cylinder':
                     updated_geom.append(('cylinder', self._make_cylinder(geom_data)))
                 elif geom_type == 'boundary':
                     updated_geom.append(('boundary', self._make_box(geom_data)))
+                elif geom_type == 'norm_boundary':
+                    updated_geom.append(('norm_boundary', self._make_box(geom_data)))
                 else:
                     raise 'geom_type is not supported'
 
         self.layout.geoms = updated_geom
 
     def _make_box(self, geom_data):
-        size = self._sample_size(2) if 'size' not in geom_data else geom_data.size
-        center = self._sample_center(size) if 'center' not in geom_data else geom_data.center
-        rotation = self._sample_rot() if 'rotation' not in geom_data else geom_data.rotation
-        return AD(center=center, size=size, rotation=rotation)
+        geom_data.update(size=self._sample_size(2) if 'size' not in geom_data else geom_data.size)
+        geom_data.update(center=self._sample_center(size) if 'center' not in geom_data else geom_data.center)
+        geom_data.update(rotation=self._sample_rot() if 'rotation' not in geom_data else geom_data.rotation)
+        return AD(geom_data)
+
 
     def _make_cylinder(self, geom_data):
-        radius = self._sample_size(1) if 'radius' not in geom_data else geom_data.radius
-        center = self._sample_center(radius) if 'center' not in geom_data else geom_data.center
-        return AD(center=center, radius=radius)
+        geom_data.update(radius=self._sample_size(1) if 'radius' not in geom_data else geom_data.radius)
+        geom_data.update(center=self._sample_center(radius) if 'center' not in geom_data else geom_data.center)
+        return AD(geom_data)
 
     def _generate_random(self, low, high, size):
         return list(self.random_generator.uniform(low=low, high=high, size=size))
