@@ -1,4 +1,4 @@
-from hocbf_composition.dynamics import AffineInControlDynamics
+from hocbf_composition.utils.dynamics import AffineInControlDynamics
 import numpy as np
 from gymnasium.spaces import Box
 

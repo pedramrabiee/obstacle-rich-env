@@ -2,7 +2,6 @@ import importlib.util
 from obstacle_rich_env.configs.robot_configs import get_robot_configs
 
 
-
 class Robot:
     def __init__(self, robot_name, random_generator):
         self.robot_name = robot_name

@@ -1,5 +1,6 @@
 from attrdict import AttrDict as AD
-from hocbf_composition.barrier import Barrier, SoftCompositionBarrier, NonSmoothCompositionBarrier
+from hocbf_composition.barriers.barrier import Barrier
+from hocbf_composition.barriers.composite_barrier import SoftCompositionBarrier, NonSmoothCompositionBarrier
 from hocbf_composition.utils.utils import *
 from obstacle_rich_env.envs.robot import Robot
 
@@ -31,6 +32,7 @@ class Map:
             cfg=self.cfg).assign_barriers_and_rule(barriers=[*self.pos_barriers],
                                                    rule='i',
                                                    infer_dynamics=True)
+
     def get_barriers(self):
         return self.pos_barriers, self.vel_barriers
 
@@ -110,7 +112,6 @@ class Map:
         geom_data.update(center=self._sample_center(size) if 'center' not in geom_data else geom_data.center)
         geom_data.update(rotation=self._sample_rot() if 'rotation' not in geom_data else geom_data.rotation)
         return AD(geom_data)
-
 
     def _make_cylinder(self, geom_data):
         geom_data.update(radius=self._sample_size(1) if 'radius' not in geom_data else geom_data.radius)
