@@ -16,6 +16,6 @@ setup(
         'cbftorch',
         'matplotlib',
         'pygame',
-        'attrdict'
+        'python-box'
     ]
 )

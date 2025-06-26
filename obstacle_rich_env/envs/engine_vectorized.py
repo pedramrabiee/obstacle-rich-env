@@ -8,7 +8,7 @@ from obstacle_rich_env.envs.map import Map
 from obstacle_rich_env.envs.robot import Robot
 import numpy as np
 import torch
-from attrdict import AttrDict as AD
+from box import Box as AD
 from torchdiffeq import odeint
 from functools import partial
 from collections import OrderedDict

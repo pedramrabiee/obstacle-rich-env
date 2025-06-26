@@ -29,6 +29,6 @@ This environment is designed to facilitate the safe navigation of a ground robot
 - cbftorch
 - matplotlib
 - pygame
-- attrdict
+- python-box
 
 The environment offers flexibility for experimentation, allowing users to customize robot dynamics, map layouts, and constraints according to their specific scenarios. Additionally, the provided barrier function enhances safety during navigation, contributing to effective training and evaluation of robotic systems in complex environments.

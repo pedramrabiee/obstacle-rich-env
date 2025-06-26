@@ -1,4 +1,4 @@
-from attrdict import AttrDict as AD
+from box import Box as AD
 
 map_config_unicycle = AD(softmax_rho=20,
                          softmin_rho=20,

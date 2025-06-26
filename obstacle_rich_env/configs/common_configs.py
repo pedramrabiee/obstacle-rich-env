@@ -1,4 +1,4 @@
-from attrdict import AttrDict as AD
+from box import Box as AD
 
 # Available keys for observation:
 #   state: Returns the system's dynamic state.

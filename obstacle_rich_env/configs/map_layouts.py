@@ -1,4 +1,4 @@
-from attrdict import AttrDict as AD
+from box import Box as AD
 
 # For box and norm_box objects, if rotation is not provided. A randomised rotation is picked.
 

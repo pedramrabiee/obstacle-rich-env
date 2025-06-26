@@ -1,5 +1,5 @@
 import numpy as np
-from attrdict import AttrDict as AD
+from box import Box as AD
 from cbftorch.barriers.barrier import Barrier
 from cbftorch.utils.make_map import GeometryProvider
 from cbftorch.utils.make_map import Map as BaseMap
