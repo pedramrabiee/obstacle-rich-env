@@ -1,4 +1,4 @@
-from hocbf_composition.utils.dynamics import AffineInControlDynamics
+from cbftorch.dynamics import AffineInControlDynamics
 import numpy as np
 from gymnasium.spaces import Box
 

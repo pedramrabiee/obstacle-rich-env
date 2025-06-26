@@ -8,5 +8,14 @@ setup(
     license='',
     author='pedramrabiee',
     author_email='pedram.rabiee@gmail.com',
-    description=''
+    description='',
+    install_requires=[
+        'numpy',
+        'torch',
+        'gymnasium',
+        'cbftorch',
+        'matplotlib',
+        'pygame',
+        'attrdict'
+    ]
 )

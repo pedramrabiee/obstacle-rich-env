@@ -1,2 +1,4 @@
 /obstacle_rich_env/tests/
 /obstacle_rich_env/bkp/
+.idea/
+*.pyc

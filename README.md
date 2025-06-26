@@ -26,7 +26,7 @@ This environment is designed to facilitate the safe navigation of a ground robot
 - numpy
 - torch
 - gymnasium
-- [hocbf-composition](https://github.com/pedramrabiee/hocbf_composition)
+- cbftorch
 - matplotlib
 - pygame
 - attrdict
